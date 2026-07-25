@@ -14,15 +14,17 @@ You pilot a submarine through hostile underwater territory. Enemies approach fro
 
 | Control | Action |
 |---------|--------|
-| `↑` / `↓` | Move up / down |
+| `↑` / `↓` / `W` / `S` | Move up / down |
 | `Space` | Fire torpedo |
+| `M` | Toggle sound effects (Mute/Unmute) |
 | `D` | Toggle debug hitboxes |
-| `Enter` | Restart (after game over) |
+| `Enter` | Next Level / Restart |
 
 ### Objectives
-- 🎯 **Score 100 points** before the 30-second timer expires to **win**
+- 🎯 **Conquer Infinite Levels** by reaching score targets before time expires
+- 🛡️ **Protect your defense line** — do not let enemies escape past the left boundary
 - 💥 Destroy enemies to earn points (tougher enemies = more points)
-- ⚡ Catch the **Lucky Fish** (gold) for a power-up — dual torpedoes + ammo refill!
+- ⚡ Catch the **Lucky Fish** (gold) for a power-up — dual torpedoes + HP repair!
 - 🐋 Take down the **Hive Whale** and watch it release a swarm of Drones
 
 ---
@@ -33,7 +35,7 @@ You pilot a submarine through hostile underwater territory. Enemies approach fro
 |-------|:--:|:------:|---------|
 | **Angler 1** | 5 | 5 | Standard enemy |
 | **Angler 2** | 6 | 6 | Tougher variant |
-| **Lucky Fish** | 5 | 15 | Grants power-up on contact |
+| **Lucky Fish** | 5 | 15 | Grants power-up + HP repair |
 | **Hive Whale** | 20 | 20 | Spawns 5 Drones on death |
 | **Drone** | 3 | 3 | Fast, spawned from Hive Whale |
 
@@ -41,16 +43,17 @@ You pilot a submarine through hostile underwater territory. Enemies approach fro
 
 ## ✨ Features
 
+- ♾️ **Endless / Infinite Level Generator** — levels dynamically scale up score targets (+150 pts/level), enemy speed (+0.15x), and spawn frequency beyond Level 5!
+- 🔊 **Web Audio API Sound Synthesizer** — zero-dependency dynamic sound effects for torpedoes, explosions, hits, power-ups, victory fanfare, defeat sequences, and alarms
+- 🏆 **5-Level Campaign System** with progressive targets, time limits, and unlocked enemy swarms
 - 🌊 **Parallax scrolling** background with 4 depth layers
 - 💣 **Particle effects** — spinning gear debris on hits and kills
 - 🔥 **Dual explosion types** — smoke and fire
 - ⚡ **Power-up system** — timed dual-fire mode with ammo regeneration
 - 🎯 **Floating score numbers** — green `+N` on kills, red `-1` on collisions
-- 📊 **Premium HUD** — gradient ammo bar, countdown timer bar, wave counter
+- 📊 **Premium HUD** — gradient ammo bar, countdown timer bar, level status
 - 📳 **Screen shake** on player damage
-- 🔄 **Wave system** — enemy spawn rate increases as you score
-- 🏆 **Win/Lose conditions** with animated game-over screen
-- 🎮 **Instant restart** — press Enter to play again
+- 🔄 **Instant restart** — press Enter to play again
 
 ---
 

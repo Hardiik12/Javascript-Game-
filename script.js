@@ -10,59 +10,305 @@ window.addEventListener('load', function () {
         {
             level: 1,
             name: 'Shallow Reef',
-            targetScore: 35,
-            timeLimit: 40000,
-            enemyInterval: 1800,
+            targetScore: 75,
+            timeLimit: 75000,
+            enemyInterval: 1600,
             speedModifier: 1.0,
             unlockedEnemies: ['angler1', 'lucky'],
-            description: 'Warm shallow waters. Clear the incoming Anglers!'
+            description: 'Warm shallow waters. Score 75 pts in 75s!'
         },
         {
             level: 2,
             name: 'Midnight Trench',
-            targetScore: 80,
-            timeLimit: 45000,
-            enemyInterval: 1500,
+            targetScore: 160,
+            timeLimit: 90000,
+            enemyInterval: 1400,
             speedModifier: 1.25,
             unlockedEnemies: ['angler1', 'angler2', 'lucky'],
-            description: 'Pitch black depths. Tougher Anglers approach!'
+            description: 'Pitch black depths. Score 160 pts in 90s!'
         },
         {
             level: 3,
             name: 'Abyssal Caverns',
-            targetScore: 130,
-            timeLimit: 50000,
-            enemyInterval: 1200,
+            targetScore: 250,
+            timeLimit: 105000,
+            enemyInterval: 1100,
             speedModifier: 1.5,
             unlockedEnemies: ['angler1', 'angler2', 'lucky', 'hive'],
-            description: 'Beware! Giant Hive Whales releasing Drones!'
+            description: 'Abyssal Swarms! Score 250 pts in 105s!'
         },
         {
             level: 4,
             name: 'Coral Catacombs',
-            targetScore: 190,
-            timeLimit: 55000,
-            enemyInterval: 950,
+            targetScore: 380,
+            timeLimit: 120000,
+            enemyInterval: 900,
             speedModifier: 1.85,
             unlockedEnemies: ['angler1', 'angler2', 'lucky', 'hive', 'drone'],
-            description: 'Fast enemy swarms! Protect your defense line!'
+            description: 'High Speed Invasion! Score 380 pts in 120s!'
         },
         {
             level: 5,
             name: 'Leviathan Core',
-            targetScore: 260,
-            timeLimit: 60000,
-            enemyInterval: 750,
+            targetScore: 500,
+            timeLimit: 150000,
+            enemyInterval: 700,
             speedModifier: 2.2,
             unlockedEnemies: ['angler1', 'angler2', 'lucky', 'hive', 'drone'],
-            description: 'FINAL ASSAULT! Defend against the massive ocean invasion!'
+            description: 'FINAL ASSAULT! Score 500 pts in 150s to save the ocean!'
         }
     ];
+
+    // ── INFINITE LEVEL GENERATOR ──
+    function getLevelConfig(index) {
+        if (index < LEVELS.length) {
+            return LEVELS[index];
+        } else {
+            const extraLevel = index + 1;
+            const targetScore = 500 + (extraLevel - 5) * 150;
+            const timeLimit = Math.min(180000, 150000 + (extraLevel - 5) * 15000);
+            const enemyInterval = Math.max(350, 700 - (extraLevel - 5) * 50);
+            const speedModifier = Number((2.2 + (extraLevel - 5) * 0.15).toFixed(2));
+            return {
+                level: extraLevel,
+                name: `Abyssal Depth ${extraLevel}`,
+                targetScore: targetScore,
+                timeLimit: timeLimit,
+                enemyInterval: enemyInterval,
+                speedModifier: speedModifier,
+                unlockedEnemies: ['angler1', 'angler2', 'lucky', 'hive', 'drone'],
+                description: `INFINITE WAVE — Level ${extraLevel}! Target: ${targetScore} pts!`
+            };
+        }
+    }
+
+    // ── SOUND CONTROLLER (Web Audio API Synthesizer) ──
+    class SoundController {
+        constructor() {
+            this.audioCtx = null;
+            this.muted = false;
+            this.btn = document.getElementById('soundBtn');
+            if (this.btn) {
+                this.btn.addEventListener('click', () => this.toggleMute());
+            }
+        }
+        init() {
+            if (!this.audioCtx) {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                if (AudioContext) {
+                    this.audioCtx = new AudioContext();
+                }
+            }
+            if (this.audioCtx && this.audioCtx.state === 'suspended') {
+                this.audioCtx.resume();
+            }
+        }
+        toggleMute() {
+            this.init();
+            this.muted = !this.muted;
+            if (this.btn) {
+                if (this.muted) {
+                    this.btn.innerText = '🔇 Muted [M]';
+                    this.btn.classList.add('muted');
+                } else {
+                    this.btn.innerText = '🔊 Sound ON [M]';
+                    this.btn.classList.remove('muted');
+                    this.playPowerup();
+                }
+            }
+        }
+        playShot() {
+            if (this.muted) return;
+            this.init();
+            if (!this.audioCtx) return;
+
+            const osc = this.audioCtx.createOscillator();
+            const gain = this.audioCtx.createGain();
+            const now = this.audioCtx.currentTime;
+
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(800, now);
+            osc.frequency.exponentialRampToValueAtTime(150, now + 0.12);
+
+            gain.gain.setValueAtTime(0.2, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.12);
+
+            osc.connect(gain);
+            gain.connect(this.audioCtx.destination);
+
+            osc.start(now);
+            osc.stop(now + 0.12);
+        }
+        playExplosion() {
+            if (this.muted) return;
+            this.init();
+            if (!this.audioCtx) return;
+
+            const bufferSize = Math.floor(this.audioCtx.sampleRate * 0.3);
+            const buffer = this.audioCtx.createBuffer(1, bufferSize, this.audioCtx.sampleRate);
+            const data = buffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) {
+                data[i] = Math.random() * 2 - 1;
+            }
+
+            const noise = this.audioCtx.createBufferSource();
+            noise.buffer = buffer;
+
+            const filter = this.audioCtx.createBiquadFilter();
+            filter.type = 'lowpass';
+            const now = this.audioCtx.currentTime;
+            filter.frequency.setValueAtTime(800, now);
+            filter.frequency.exponentialRampToValueAtTime(80, now + 0.3);
+
+            const gain = this.audioCtx.createGain();
+            gain.gain.setValueAtTime(0.35, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+
+            noise.connect(filter);
+            filter.connect(gain);
+            gain.connect(this.audioCtx.destination);
+
+            noise.start(now);
+            noise.stop(now + 0.3);
+        }
+        playHit() {
+            if (this.muted) return;
+            this.init();
+            if (!this.audioCtx) return;
+
+            const osc = this.audioCtx.createOscillator();
+            const gain = this.audioCtx.createGain();
+            const now = this.audioCtx.currentTime;
+
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(300, now);
+            osc.frequency.exponentialRampToValueAtTime(80, now + 0.08);
+
+            gain.gain.setValueAtTime(0.3, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.08);
+
+            osc.connect(gain);
+            gain.connect(this.audioCtx.destination);
+
+            osc.start(now);
+            osc.stop(now + 0.08);
+        }
+        playPowerup() {
+            if (this.muted) return;
+            this.init();
+            if (!this.audioCtx) return;
+
+            const now = this.audioCtx.currentTime;
+            const freqs = [350, 523.25, 659.25, 783.99, 1046.5];
+            freqs.forEach((f, i) => {
+                const osc = this.audioCtx.createOscillator();
+                const gain = this.audioCtx.createGain();
+                const startTime = now + i * 0.06;
+
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(f, startTime);
+
+                gain.gain.setValueAtTime(0.25, startTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, startTime + 0.12);
+
+                osc.connect(gain);
+                gain.connect(this.audioCtx.destination);
+
+                osc.start(startTime);
+                osc.stop(startTime + 0.12);
+            });
+        }
+        playVictory() {
+            if (this.muted) return;
+            this.init();
+            if (!this.audioCtx) return;
+
+            const now = this.audioCtx.currentTime;
+            const notes = [
+                { f: 523.25, duration: 0.12, time: 0 },
+                { f: 659.25, duration: 0.12, time: 0.14 },
+                { f: 783.99, duration: 0.12, time: 0.28 },
+                { f: 1046.50, duration: 0.35, time: 0.42 }
+            ];
+
+            notes.forEach(note => {
+                const osc = this.audioCtx.createOscillator();
+                const gain = this.audioCtx.createGain();
+                const startTime = now + note.time;
+
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(note.f, startTime);
+
+                gain.gain.setValueAtTime(0.3, startTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, startTime + note.duration);
+
+                osc.connect(gain);
+                gain.connect(this.audioCtx.destination);
+
+                osc.start(startTime);
+                osc.stop(startTime + note.duration);
+            });
+        }
+        playDefeat() {
+            if (this.muted) return;
+            this.init();
+            if (!this.audioCtx) return;
+
+            const now = this.audioCtx.currentTime;
+            const notes = [
+                { f: 400, duration: 0.15, time: 0 },
+                { f: 350, duration: 0.15, time: 0.16 },
+                { f: 300, duration: 0.15, time: 0.32 },
+                { f: 220, duration: 0.45, time: 0.48 }
+            ];
+
+            notes.forEach(note => {
+                const osc = this.audioCtx.createOscillator();
+                const gain = this.audioCtx.createGain();
+                const startTime = now + note.time;
+
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(note.f, startTime);
+
+                gain.gain.setValueAtTime(0.25, startTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, startTime + note.duration);
+
+                osc.connect(gain);
+                gain.connect(this.audioCtx.destination);
+
+                osc.start(startTime);
+                osc.stop(startTime + note.duration);
+            });
+        }
+        playAlarm() {
+            if (this.muted) return;
+            this.init();
+            if (!this.audioCtx) return;
+
+            const osc = this.audioCtx.createOscillator();
+            const gain = this.audioCtx.createGain();
+            const now = this.audioCtx.currentTime;
+
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(880, now);
+            osc.frequency.setValueAtTime(440, now + 0.08);
+
+            gain.gain.setValueAtTime(0.2, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.16);
+
+            osc.connect(gain);
+            gain.connect(this.audioCtx.destination);
+
+            osc.start(now);
+            osc.stop(now + 0.16);
+        }
+    }
 
     class InputHandler {
         constructor(game) {
             this.game = game;
             window.addEventListener('keydown', e => {
+                if (this.game.sound) this.game.sound.init();
                 if (
                     (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'w' || e.key === 's') &&
                     this.game.keys.indexOf(e.key) === -1
@@ -72,8 +318,10 @@ window.addEventListener('load', function () {
                     this.game.player.shootTop();
                 } else if (e.key === 'd' || e.key === 'D') {
                     this.game.debug = !this.game.debug;
+                } else if (e.key === 'm' || e.key === 'M') {
+                    if (this.game.sound) this.game.sound.toggleMute();
                 } else if (e.key === 'Enter') {
-                    if (this.game.levelCompleted && !this.game.allLevelsBeaten) {
+                    if (this.game.levelCompleted) {
                         this.game.nextLevel();
                     } else if (this.game.gameOver) {
                         this.game.restart();
@@ -276,6 +524,7 @@ window.addEventListener('load', function () {
                     new Projectile(this.game, this.x + 80, this.y + 30)
                 );
                 this.game.ammo--;
+                if (this.game.sound) this.game.sound.playShot();
             }
             if (this.powerUp) this.shootBottom();
         }
@@ -291,6 +540,7 @@ window.addEventListener('load', function () {
             this.powerUp = true;
             this.powerUpTimer = 0;
             if (this.game.ammo < this.game.maxAmmo) this.game.ammo = this.game.maxAmmo;
+            if (this.game.sound) this.game.sound.playPowerup();
         }
     }
 
@@ -332,12 +582,14 @@ window.addEventListener('load', function () {
             this.game.escapedCount++;
             this.game.health = Math.max(0, this.game.health - this.escapeDamage);
             this.game.triggerShake(8, 250);
+            if (this.game.sound) this.game.sound.playAlarm();
             this.game.floatingTexts.push(
                 new FloatingText(`ESCAPED! -${this.escapeDamage} HP`, 15, Math.max(40, this.y + 30), '#ff3344')
             );
             if (this.game.health <= 0 && !this.game.gameOver) {
                 this.game.gameOverReason = `LEVEL ${this.game.currentLevelIndex + 1} DEFENSE BREACHED!`;
                 this.game.gameOver = true;
+                if (this.game.sound) this.game.sound.playDefeat();
             }
         }
         draw(context) {
@@ -582,7 +834,7 @@ window.addEventListener('load', function () {
             context.fillText('LEVEL', 125, 28);
             context.font = 'bold 24px ' + this.accentFont;
             context.fillStyle = '#ffd700';
-            context.fillText(`${this.game.currentLevelIndex + 1} / ${LEVELS.length}`, 125, 54);
+            context.fillText(`${this.game.currentLevelIndex + 1}`, 125, 54);
 
             // Level Name
             context.font = 'bold 11px ' + this.accentFont;
@@ -748,11 +1000,7 @@ window.addEventListener('load', function () {
                 context.globalAlpha = this.overlayAlpha * promptAlpha;
                 context.font = 'bold 18px ' + this.accentFont;
                 context.fillStyle = '#ffffff';
-                if (this.game.currentLevelIndex < LEVELS.length - 1) {
-                    context.fillText('[ Press ENTER to Start Next Level ]', this.game.width * 0.5, this.game.height * 0.5 + 110);
-                } else {
-                    context.fillText('🏆 ALL 5 LEVELS CLEARED! YOU ARE THE APEX OCEAN HUNTER! 🏆', this.game.width * 0.5, this.game.height * 0.5 + 110);
-                }
+                context.fillText(`[ Press ENTER to Start Level ${this.game.currentLevelIndex + 2} ]`, this.game.width * 0.5, this.game.height * 0.5 + 110);
 
                 context.restore();
             }
@@ -770,28 +1018,22 @@ window.addEventListener('load', function () {
 
                 context.textAlign = 'center';
 
-                const won = this.game.allLevelsBeaten;
-
-                context.shadowColor = won ? 'rgba(0, 255, 180, 0.8)' : 'rgba(255, 60, 60, 0.8)';
+                context.shadowColor = 'rgba(255, 60, 60, 0.8)';
                 context.shadowBlur = 25 + Math.sin(this.overlayPulse) * 10;
                 context.font = '75px ' + this.fontFamily;
-                context.fillStyle = won ? '#00ffc8' : '#ff5555';
-                const titleText = won ? 'CAMPAIGN VICTORY!' : 'DEFEAT — MISSION FAILED!';
-                context.fillText(titleText, this.game.width * 0.5, this.game.height * 0.5 - 55);
+                context.fillStyle = '#ff5555';
+                context.fillText('DEFEAT — MISSION FAILED!', this.game.width * 0.5, this.game.height * 0.5 - 55);
 
                 context.shadowBlur = 0;
                 context.font = '22px ' + this.accentFont;
                 context.fillStyle = 'rgba(210, 230, 255, 0.9)';
-                const subText = won
-                    ? `Incredible job commander! You conquered all 5 underwater sectors!`
-                    : (this.game.gameOverReason || `Failed on Level ${this.game.currentLevelIndex + 1} (${this.game.currentLevelConfig.name})`);
-                context.fillText(subText, this.game.width * 0.5, this.game.height * 0.5 + 5);
+                context.fillText(this.game.gameOverReason || `Submarine Destroyed on Level ${this.game.currentLevelIndex + 1}`, this.game.width * 0.5, this.game.height * 0.5 + 5);
 
                 // Stats breakdown
                 context.font = 'bold 18px ' + this.accentFont;
                 context.fillStyle = 'rgba(160, 210, 255, 0.8)';
                 context.fillText(
-                    `Final Score: ${Math.floor(this.game.score)}   |   Level: ${this.game.currentLevelIndex + 1}/${LEVELS.length}   |   Escaped Fish: ${this.game.escapedCount}`,
+                    `Final Score: ${Math.floor(this.game.score)}   |   Level Reached: ${this.game.currentLevelIndex + 1}   |   Escaped Fish: ${this.game.escapedCount}`,
                     this.game.width * 0.5,
                     this.game.height * 0.5 + 50
                 );
@@ -818,6 +1060,7 @@ window.addEventListener('load', function () {
         constructor(width, height) {
             this.width = width;
             this.height = height;
+            this.sound = new SoundController();
             this.background = new Background(this);
             this.ui = new UI(this);
             this.keys = [];
@@ -828,7 +1071,7 @@ window.addEventListener('load', function () {
             
             // Level Campaign Management
             this.currentLevelIndex = 0;
-            this.currentLevelConfig = LEVELS[0];
+            this.currentLevelConfig = getLevelConfig(0);
             this.levelCompleted = false;
             this.allLevelsBeaten = false;
 
@@ -878,9 +1121,11 @@ window.addEventListener('load', function () {
                 } else if (this.health <= 0) {
                     this.gameOverReason = `DEFENSE BREACHED ON LEVEL ${this.currentLevelIndex + 1}!`;
                     this.gameOver = true;
+                    if (this.sound) this.sound.playDefeat();
                 } else {
                     this.gameOverReason = `TIME EXPIRED ON LEVEL ${this.currentLevelIndex + 1}! (TARGET NOT MET)`;
                     this.gameOver = true;
+                    if (this.sound) this.sound.playDefeat();
                 }
             }
 
@@ -952,12 +1197,14 @@ window.addEventListener('load', function () {
                         this.health = Math.max(0, this.health - directDamage);
                         this.score = Math.max(0, this.score - 1);
                         this.triggerShake(10, 300);
+                        if (this.sound) this.sound.playHit();
                         this.floatingTexts.push(
                             new FloatingText(`-${directDamage} HP`, this.player.x + 100, this.player.y, '#ff3344')
                         );
                         if (this.health <= 0) {
                             this.gameOverReason = `SUBMARINE DESTROYED ON LEVEL ${this.currentLevelIndex + 1}!`;
                             this.gameOver = true;
+                            if (this.sound) this.sound.playDefeat();
                         }
                     }
                 }
@@ -986,6 +1233,7 @@ window.addEventListener('load', function () {
                             }
                             enemy.markedForDeletion = true;
                             this.addExplosion(enemy);
+                            if (this.sound) this.sound.playExplosion();
                             if (enemy.type === 'hive') {
                                 for (let i = 0; i < 5; i++) {
                                     this.enemies.push(
@@ -1009,6 +1257,8 @@ window.addEventListener('load', function () {
                                     )
                                 );
                             }
+                        } else {
+                            if (this.sound) this.sound.playHit();
                         }
                     }
                 });
@@ -1053,31 +1303,27 @@ window.addEventListener('load', function () {
             this.levelCompleted = true;
             this.ui.overlayAlpha = 0;
             this.ui.overlayPulse = 0;
-            if (this.currentLevelIndex >= LEVELS.length - 1) {
-                this.allLevelsBeaten = true;
-                this.gameOver = true;
-            }
+            if (this.sound) this.sound.playVictory();
         }
 
         nextLevel() {
-            if (this.currentLevelIndex < LEVELS.length - 1) {
-                this.currentLevelIndex++;
-                this.currentLevelConfig = LEVELS[this.currentLevelIndex];
-                this.levelCompleted = false;
-                this.gameTime = 0;
-                this.enemyTimer = 0;
-                this.enemyInterval = this.currentLevelConfig.enemyInterval;
-                this.enemies = [];
-                this.player.projectiles = [];
-                
-                // Reward player on level advance: +30 HP repair & full ammo!
-                this.health = Math.min(this.maxHealth, this.health + 30);
-                this.ammo = this.maxAmmo;
-                
-                this.floatingTexts.push(
-                    new FloatingText(`LEVEL ${this.currentLevelIndex + 1}: ${this.currentLevelConfig.name.toUpperCase()}`, this.width * 0.25, 220, '#6ee7ff', 32)
-                );
-            }
+            this.currentLevelIndex++;
+            this.currentLevelConfig = getLevelConfig(this.currentLevelIndex);
+            this.levelCompleted = false;
+            this.gameTime = 0;
+            this.enemyTimer = 0;
+            this.enemyInterval = this.currentLevelConfig.enemyInterval;
+            this.enemies = [];
+            this.player.projectiles = [];
+            if (this.sound) this.sound.playPowerup();
+            
+            // Reward player on level advance: +35 HP repair & full ammo!
+            this.health = Math.min(this.maxHealth, this.health + 35);
+            this.ammo = this.maxAmmo;
+            
+            this.floatingTexts.push(
+                new FloatingText(`LEVEL ${this.currentLevelIndex + 1}: ${this.currentLevelConfig.name.toUpperCase()}`, this.width * 0.22, 220, '#6ee7ff', 32)
+            );
         }
 
         addEnemy() {
@@ -1128,7 +1374,7 @@ window.addEventListener('load', function () {
 
         restart() {
             this.currentLevelIndex = 0;
-            this.currentLevelConfig = LEVELS[0];
+            this.currentLevelConfig = getLevelConfig(0);
             this.levelCompleted = false;
             this.allLevelsBeaten = false;
             

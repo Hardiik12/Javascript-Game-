@@ -89,6 +89,39 @@ main {
     }
 }
 
+/* ── Sound Toggle Button ── */
+.sound-btn {
+    position: absolute;
+    top: 25px;
+    right: 25px;
+    z-index: 10;
+    background: rgba(10, 30, 50, 0.75);
+    border: 2px solid rgba(80, 200, 255, 0.6);
+    border-radius: 8px;
+    color: #e0f7fc;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    padding: 8px 14px;
+    cursor: pointer;
+    backdrop-filter: blur(8px);
+    box-shadow: 0 0 15px rgba(0, 180, 255, 0.3);
+    transition: all 0.2s ease-in-out;
+}
+
+.sound-btn:hover {
+    background: rgba(15, 45, 75, 0.9);
+    border-color: #00d2ff;
+    box-shadow: 0 0 22px rgba(0, 210, 255, 0.6);
+    transform: translateY(-2px);
+}
+
+.sound-btn.muted {
+    border-color: rgba(255, 100, 100, 0.6);
+    color: #ff9999;
+    box-shadow: 0 0 15px rgba(255, 50, 50, 0.3);
+}
+
 /* ── Hidden sprite-sheet images ── */
 #layer1, #layer2, #layer3, #layer4,
 #player, #angler1, #angler2, #lucky,
