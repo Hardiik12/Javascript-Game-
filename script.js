@@ -5,6 +5,60 @@ window.addEventListener('load', function () {
     canvas.width = 1500;
     canvas.height = 500;
 
+    // ── LEVEL DEFINITIONS ──
+    const LEVELS = [
+        {
+            level: 1,
+            name: 'Shallow Reef',
+            targetScore: 35,
+            timeLimit: 40000,
+            enemyInterval: 1800,
+            speedModifier: 1.0,
+            unlockedEnemies: ['angler1', 'lucky'],
+            description: 'Warm shallow waters. Clear the incoming Anglers!'
+        },
+        {
+            level: 2,
+            name: 'Midnight Trench',
+            targetScore: 80,
+            timeLimit: 45000,
+            enemyInterval: 1500,
+            speedModifier: 1.25,
+            unlockedEnemies: ['angler1', 'angler2', 'lucky'],
+            description: 'Pitch black depths. Tougher Anglers approach!'
+        },
+        {
+            level: 3,
+            name: 'Abyssal Caverns',
+            targetScore: 130,
+            timeLimit: 50000,
+            enemyInterval: 1200,
+            speedModifier: 1.5,
+            unlockedEnemies: ['angler1', 'angler2', 'lucky', 'hive'],
+            description: 'Beware! Giant Hive Whales releasing Drones!'
+        },
+        {
+            level: 4,
+            name: 'Coral Catacombs',
+            targetScore: 190,
+            timeLimit: 55000,
+            enemyInterval: 950,
+            speedModifier: 1.85,
+            unlockedEnemies: ['angler1', 'angler2', 'lucky', 'hive', 'drone'],
+            description: 'Fast enemy swarms! Protect your defense line!'
+        },
+        {
+            level: 5,
+            name: 'Leviathan Core',
+            targetScore: 260,
+            timeLimit: 60000,
+            enemyInterval: 750,
+            speedModifier: 2.2,
+            unlockedEnemies: ['angler1', 'angler2', 'lucky', 'hive', 'drone'],
+            description: 'FINAL ASSAULT! Defend against the massive ocean invasion!'
+        }
+    ];
+
     class InputHandler {
         constructor(game) {
             this.game = game;
@@ -18,8 +72,12 @@ window.addEventListener('load', function () {
                     this.game.player.shootTop();
                 } else if (e.key === 'd' || e.key === 'D') {
                     this.game.debug = !this.game.debug;
-                } else if (e.key === 'Enter' && this.game.gameOver) {
-                    this.game.restart();
+                } else if (e.key === 'Enter') {
+                    if (this.game.levelCompleted && !this.game.allLevelsBeaten) {
+                        this.game.nextLevel();
+                    } else if (this.game.gameOver) {
+                        this.game.restart();
+                    }
                 }
             });
             window.addEventListener('keyup', e => {
@@ -37,7 +95,7 @@ window.addEventListener('load', function () {
             this.y = y;
             this.width = 10;
             this.height = 3;
-            this.speed = 4;
+            this.speed = 4.5;
             this.markedForDeletion = false;
             this.image = document.getElementById('projectile');
         }
@@ -103,14 +161,15 @@ window.addEventListener('load', function () {
 
     // ── Floating Combat Text ──
     class FloatingText {
-        constructor(text, x, y, color = '#00ffc8') {
+        constructor(text, x, y, color = '#00ffc8', fontSize = 24) {
             this.text = text;
             this.x = x;
             this.y = y;
             this.color = color;
+            this.fontSize = fontSize;
             this.markedForDeletion = false;
             this.timer = 0;
-            this.lifeSpan = 1400;
+            this.lifeSpan = 1500;
             this.speedY = -1.2;
             this.opacity = 1;
         }
@@ -125,7 +184,7 @@ window.addEventListener('load', function () {
         draw(context) {
             context.save();
             context.globalAlpha = Math.max(0, this.opacity);
-            context.font = 'bold 24px Orbitron, sans-serif';
+            context.font = `bold ${this.fontSize}px Orbitron, sans-serif`;
             context.shadowColor = 'black';
             context.shadowBlur = 8;
             context.fillStyle = this.color;
@@ -145,7 +204,7 @@ window.addEventListener('load', function () {
             this.frameY = 1;
             this.maxFrame = 37;
             this.speedY = 0;
-            this.maxSpeed = 4;
+            this.maxSpeed = 4.5;
             this.projectiles = [];
             this.image = document.getElementById('player');
             this.powerUp = false;
@@ -185,7 +244,7 @@ window.addEventListener('load', function () {
                 if (this.powerUpTimer > this.powerUpLimit) {
                     this.powerUp = false;
                     this.powerUpTimer = 0;
-                    this.frameY = 1; // reset to normal frame Y
+                    this.frameY = 1;
                 } else {
                     this.powerUpTimer += deltaTime;
                     this.frameY = 1;
@@ -212,7 +271,7 @@ window.addEventListener('load', function () {
             );
         }
         shootTop() {
-            if (this.game.ammo > 0 && !this.game.gameOver) {
+            if (this.game.ammo > 0 && !this.game.gameOver && !this.game.levelCompleted) {
                 this.projectiles.push(
                     new Projectile(this.game, this.x + 80, this.y + 30)
                 );
@@ -221,7 +280,7 @@ window.addEventListener('load', function () {
             if (this.powerUp) this.shootBottom();
         }
         shootBottom() {
-            if (this.game.ammo > 0 && !this.game.gameOver) {
+            if (this.game.ammo > 0 && !this.game.gameOver && !this.game.levelCompleted) {
                 this.projectiles.push(
                     new Projectile(this.game, this.x + 80, this.y + 175)
                 );
@@ -239,20 +298,25 @@ window.addEventListener('load', function () {
         constructor(game) {
             this.game = game;
             this.x = this.game.width;
-            this.speedX = Math.random() * -1.5 - 0.8;
+            this.speedX = (Math.random() * -1.8 - 1.0) * this.game.currentLevelConfig.speedModifier;
             this.markedForDeletion = false;
+            this.hasEscaped = false;
             this.frameX = 0;
             this.frameY = 0;
             this.maxFrame = 37;
-            this.escapeDamage = 15; // Damage dealt to player/base when fish escapes
+            this.escapeDamage = 15;
         }
         update() {
             this.x += this.speedX - this.game.speed;
             
-            // Check if fish escaped past left screen edge
+            // Check if fish breaches left defense line
+            if (this.x < -40 && !this.hasEscaped) {
+                this.hasEscaped = true;
+                this.onEscape();
+            }
+
             if (this.x + this.width < 0) {
                 this.markedForDeletion = true;
-                this.onEscape();
             }
 
             // sprite animation
@@ -263,11 +327,8 @@ window.addEventListener('load', function () {
             }
         }
         onEscape() {
-            if (this.type === 'lucky') {
-                // Lucky fish escapes peacefully without penalty
-                return;
-            }
-            // Penalty for letting enemies breach defense line!
+            if (this.type === 'lucky') return;
+            
             this.game.escapedCount++;
             this.game.health = Math.max(0, this.game.health - this.escapeDamage);
             this.game.triggerShake(8, 250);
@@ -275,7 +336,7 @@ window.addEventListener('load', function () {
                 new FloatingText(`ESCAPED! -${this.escapeDamage} HP`, 15, Math.max(40, this.y + 30), '#ff3344')
             );
             if (this.game.health <= 0 && !this.game.gameOver) {
-                this.game.gameOverReason = 'DEFENSE BREACHED! TOO MANY FISH ESCAPED!';
+                this.game.gameOverReason = `LEVEL ${this.game.currentLevelIndex + 1} DEFENSE BREACHED!`;
                 this.game.gameOver = true;
             }
         }
@@ -355,8 +416,8 @@ window.addEventListener('load', function () {
             this.lives = 20;
             this.score = this.lives;
             this.type = 'hive';
-            this.speedX = Math.random() * -1.2 - 0.3;
-            this.escapeDamage = 35; // Heavy penalty if big whale breaches!
+            this.speedX = (Math.random() * -1.2 - 0.3) * this.game.currentLevelConfig.speedModifier;
+            this.escapeDamage = 35;
         }
     }
 
@@ -372,7 +433,7 @@ window.addEventListener('load', function () {
             this.lives = 3;
             this.score = this.lives;
             this.type = 'drone';
-            this.speedX = Math.random() * -4.2 - 0.5;
+            this.speedX = (Math.random() * -4.2 - 0.5) * this.game.currentLevelConfig.speedModifier;
             this.escapeDamage = 10;
         }
     }
@@ -489,58 +550,66 @@ window.addEventListener('load', function () {
             this.fontFamily = 'Bangers';
             this.accentFont = 'Orbitron';
             this.color = 'white';
-            this.gameOverAlpha = 0;
-            this.gameOverPulse = 0;
+            this.overlayAlpha = 0;
+            this.overlayPulse = 0;
         }
         draw(context) {
             context.save();
 
             // ── HUD Panel Backdrop ──
-            const panelGrad = context.createLinearGradient(0, 0, 480, 115);
-            panelGrad.addColorStop(0, 'rgba(0, 12, 35, 0.75)');
-            panelGrad.addColorStop(1, 'rgba(0, 12, 35, 0.2)');
+            const panelGrad = context.createLinearGradient(0, 0, 540, 115);
+            panelGrad.addColorStop(0, 'rgba(0, 12, 35, 0.85)');
+            panelGrad.addColorStop(1, 'rgba(0, 12, 35, 0.25)');
             context.fillStyle = panelGrad;
             context.beginPath();
-            context.roundRect(12, 10, 460, 105, 10);
+            context.roundRect(12, 10, 530, 105, 10);
             context.fill();
-            context.strokeStyle = 'rgba(80, 200, 255, 0.4)';
+            context.strokeStyle = 'rgba(80, 200, 255, 0.45)';
             context.lineWidth = 1.5;
             context.stroke();
 
             // ── Score ──
-            context.font = '12px ' + this.accentFont;
+            context.font = '11px ' + this.accentFont;
             context.fillStyle = 'rgba(180, 220, 255, 0.75)';
-            context.fillText('SCORE', 24, 30);
-            context.font = 'bold 28px ' + this.accentFont;
+            context.fillText('SCORE', 24, 28);
+            context.font = 'bold 26px ' + this.accentFont;
             context.fillStyle = '#ffffff';
-            context.fillText(Math.floor(this.game.score), 24, 58);
+            context.fillText(Math.floor(this.game.score), 24, 55);
 
-            // ── Wave ──
-            context.font = '12px ' + this.accentFont;
+            // ── Level Badge ──
+            context.font = '11px ' + this.accentFont;
             context.fillStyle = 'rgba(180, 220, 255, 0.75)';
-            context.fillText('WAVE', 140, 30);
+            context.fillText('LEVEL', 125, 28);
             context.font = 'bold 24px ' + this.accentFont;
+            context.fillStyle = '#ffd700';
+            context.fillText(`${this.game.currentLevelIndex + 1} / ${LEVELS.length}`, 125, 54);
+
+            // Level Name
+            context.font = 'bold 11px ' + this.accentFont;
             context.fillStyle = '#6ee7ff';
-            context.fillText(this.game.wave, 140, 56);
+            context.fillText(this.game.currentLevelConfig.name.toUpperCase(), 125, 72);
+
+            // Target Score
+            context.font = '10px ' + this.accentFont;
+            context.fillStyle = 'rgba(200, 255, 220, 0.8)';
+            context.fillText(`TARGET: ${this.game.currentLevelConfig.targetScore} PTS`, 125, 87);
 
             // ── Health / Base Shield Bar ──
-            context.font = '12px ' + this.accentFont;
+            context.font = '11px ' + this.accentFont;
             context.fillStyle = 'rgba(180, 220, 255, 0.75)';
-            context.fillText('HEALTH / SHIELD', 240, 30);
+            context.fillText('HEALTH / SHIELD', 285, 28);
 
-            const hpBarWidth = 210;
+            const hpBarWidth = 230;
             const hpBarHeight = 12;
-            const hpX = 240;
-            const hpY = 40;
+            const hpX = 285;
+            const hpY = 38;
             const hpRatio = Math.max(0, this.game.health / this.game.maxHealth);
 
-            // HP bar bg
             context.fillStyle = 'rgba(255, 255, 255, 0.1)';
             context.beginPath();
             context.roundRect(hpX, hpY, hpBarWidth, hpBarHeight, 5);
             context.fill();
 
-            // HP bar fill
             if (hpRatio > 0) {
                 const hpGrad = context.createLinearGradient(hpX, 0, hpX + hpBarWidth * hpRatio, 0);
                 if (hpRatio > 0.5) {
@@ -563,14 +632,14 @@ window.addEventListener('load', function () {
             context.fillText(`${Math.ceil(this.game.health)}%`, hpX + hpBarWidth - 35, hpY - 3);
 
             // ── Ammo Bar ──
-            context.font = '12px ' + this.accentFont;
+            context.font = '11px ' + this.accentFont;
             context.fillStyle = 'rgba(180, 220, 255, 0.75)';
-            context.fillText('AMMO', 24, 80);
+            context.fillText('AMMO', 24, 78);
 
-            const ammoBarWidth = 200;
+            const ammoBarWidth = 90;
             const ammoBarHeight = 10;
             const ammoX = 24;
-            const ammoY = 88;
+            const ammoY = 85;
             const ammoRatio = Math.min(this.game.ammo / this.game.maxAmmo, 1);
 
             context.fillStyle = 'rgba(255, 255, 255, 0.1)';
@@ -594,12 +663,12 @@ window.addEventListener('load', function () {
             }
 
             // ── Escaped Counter ──
-            context.font = '12px ' + this.accentFont;
+            context.font = '11px ' + this.accentFont;
             context.fillStyle = 'rgba(255, 120, 120, 0.85)';
-            context.fillText(`ESCAPED: ${this.game.escapedCount}`, 240, 96);
+            context.fillText(`ESCAPED: ${this.game.escapedCount}`, 285, 95);
 
             // ── Timer Bar (bottom of screen) ──
-            const timeRatio = Math.max(0, 1 - this.game.gameTime / this.game.timeLimit);
+            const timeRatio = Math.max(0, 1 - this.game.gameTime / this.game.currentLevelConfig.timeLimit);
             const timerWidth = this.game.width - 40;
             const timerHeight = 8;
             const timerX = 20;
@@ -625,60 +694,115 @@ window.addEventListener('load', function () {
                 context.fill();
             }
 
-            const timeLeft = Math.max(0, (this.game.timeLimit - this.game.gameTime) * 0.001).toFixed(1);
+            const timeLeft = Math.max(0, (this.game.currentLevelConfig.timeLimit - this.game.gameTime) * 0.001).toFixed(1);
             context.font = '13px ' + this.accentFont;
             context.fillStyle = timeRatio > 0.3 ? 'rgba(200, 255, 230, 0.8)' : 'rgba(255, 150, 130, 0.9)';
             context.textAlign = 'right';
             context.fillText(timeLeft + 's', timerX + timerWidth, timerY - 4);
             context.textAlign = 'left';
 
-            // ── Game Over Screen ──
-            if (this.game.gameOver) {
-                this.gameOverAlpha = Math.min(1, this.gameOverAlpha + 0.03);
-                this.gameOverPulse += 0.05;
+            // ── LEVEL INTERMISSION / LEVEL COMPLETE OVERLAY ──
+            if (this.game.levelCompleted && !this.game.gameOver) {
+                this.overlayAlpha = Math.min(1, this.overlayAlpha + 0.04);
+                this.overlayPulse += 0.05;
 
                 context.save();
-                context.globalAlpha = this.gameOverAlpha;
+                context.globalAlpha = this.overlayAlpha;
 
-                // Dark blurred backdrop overlay
-                context.fillStyle = 'rgba(0, 8, 24, 0.82)';
+                // Dark glowing backdrop
+                context.fillStyle = 'rgba(0, 12, 35, 0.85)';
                 context.fillRect(0, 0, this.game.width, this.game.height);
 
                 context.textAlign = 'center';
 
-                const won = this.game.score >= this.game.winningScore || (this.game.gameTime >= this.game.timeLimit && this.game.health > 0);
+                // Stars rating based on health
+                let stars = '⭐⭐⭐';
+                if (this.game.health < 40) stars = '⭐';
+                else if (this.game.health < 75) stars = '⭐⭐';
+
+                context.shadowColor = 'rgba(0, 255, 200, 0.8)';
+                context.shadowBlur = 25 + Math.sin(this.overlayPulse) * 10;
+                context.font = '70px ' + this.fontFamily;
+                context.fillStyle = '#00ffc8';
+                context.fillText(`LEVEL ${this.game.currentLevelIndex + 1} COMPLETE!`, this.game.width * 0.5, this.game.height * 0.5 - 65);
+
+                context.shadowBlur = 0;
+                context.font = 'bold 36px ' + this.accentFont;
+                context.fillStyle = '#ffd700';
+                context.fillText(stars, this.game.width * 0.5, this.game.height * 0.5 - 15);
+
+                context.font = '22px ' + this.accentFont;
+                context.fillStyle = 'rgba(210, 230, 255, 0.9)';
+                context.fillText(`Sector '${this.game.currentLevelConfig.name}' Cleared!`, this.game.width * 0.5, this.game.height * 0.5 + 25);
+
+                context.font = 'bold 16px ' + this.accentFont;
+                context.fillStyle = 'rgba(160, 210, 255, 0.8)';
+                context.fillText(
+                    `Score: ${Math.floor(this.game.score)}   |   Health: ${Math.ceil(this.game.health)}%   |   Escaped: ${this.game.escapedCount}`,
+                    this.game.width * 0.5,
+                    this.game.height * 0.5 + 60
+                );
+
+                // Prompt
+                const promptAlpha = 0.5 + Math.sin(this.overlayPulse * 2) * 0.4;
+                context.globalAlpha = this.overlayAlpha * promptAlpha;
+                context.font = 'bold 18px ' + this.accentFont;
+                context.fillStyle = '#ffffff';
+                if (this.game.currentLevelIndex < LEVELS.length - 1) {
+                    context.fillText('[ Press ENTER to Start Next Level ]', this.game.width * 0.5, this.game.height * 0.5 + 110);
+                } else {
+                    context.fillText('🏆 ALL 5 LEVELS CLEARED! YOU ARE THE APEX OCEAN HUNTER! 🏆', this.game.width * 0.5, this.game.height * 0.5 + 110);
+                }
+
+                context.restore();
+            }
+
+            // ── Game Over Screen ──
+            if (this.game.gameOver) {
+                this.overlayAlpha = Math.min(1, this.overlayAlpha + 0.03);
+                this.overlayPulse += 0.05;
+
+                context.save();
+                context.globalAlpha = this.overlayAlpha;
+
+                context.fillStyle = 'rgba(0, 8, 24, 0.85)';
+                context.fillRect(0, 0, this.game.width, this.game.height);
+
+                context.textAlign = 'center';
+
+                const won = this.game.allLevelsBeaten;
 
                 context.shadowColor = won ? 'rgba(0, 255, 180, 0.8)' : 'rgba(255, 60, 60, 0.8)';
-                context.shadowBlur = 25 + Math.sin(this.gameOverPulse) * 10;
+                context.shadowBlur = 25 + Math.sin(this.overlayPulse) * 10;
                 context.font = '75px ' + this.fontFamily;
                 context.fillStyle = won ? '#00ffc8' : '#ff5555';
-                const titleText = won ? 'VICTORY — SECTOR SECURED!' : 'DEFEAT — MISSION FAILED!';
+                const titleText = won ? 'CAMPAIGN VICTORY!' : 'DEFEAT — MISSION FAILED!';
                 context.fillText(titleText, this.game.width * 0.5, this.game.height * 0.5 - 55);
 
                 context.shadowBlur = 0;
                 context.font = '22px ' + this.accentFont;
                 context.fillStyle = 'rgba(210, 230, 255, 0.9)';
                 const subText = won
-                    ? `Great job commander! Escaped fish: ${this.game.escapedCount}`
-                    : (this.game.gameOverReason || 'Submarine destroyed! Too many enemies breached your sector!');
+                    ? `Incredible job commander! You conquered all 5 underwater sectors!`
+                    : (this.game.gameOverReason || `Failed on Level ${this.game.currentLevelIndex + 1} (${this.game.currentLevelConfig.name})`);
                 context.fillText(subText, this.game.width * 0.5, this.game.height * 0.5 + 5);
 
                 // Stats breakdown
                 context.font = 'bold 18px ' + this.accentFont;
                 context.fillStyle = 'rgba(160, 210, 255, 0.8)';
                 context.fillText(
-                    `Final Score: ${Math.floor(this.game.score)}   |   Health Left: ${Math.ceil(this.game.health)}%   |   Wave Reached: ${this.game.wave}`,
+                    `Final Score: ${Math.floor(this.game.score)}   |   Level: ${this.game.currentLevelIndex + 1}/${LEVELS.length}   |   Escaped Fish: ${this.game.escapedCount}`,
                     this.game.width * 0.5,
                     this.game.height * 0.5 + 50
                 );
 
                 // Restart prompt
-                const restartAlpha = 0.5 + Math.sin(this.gameOverPulse * 2) * 0.4;
-                context.globalAlpha = this.gameOverAlpha * restartAlpha;
+                const restartAlpha = 0.5 + Math.sin(this.overlayPulse * 2) * 0.4;
+                context.globalAlpha = this.overlayAlpha * restartAlpha;
                 context.font = '18px ' + this.accentFont;
                 context.fillStyle = '#ffffff';
                 context.fillText(
-                    '[ Press ENTER to Try Again ]',
+                    '[ Press ENTER to Restart Campaign ]',
                     this.game.width * 0.5,
                     this.game.height * 0.5 + 105
                 );
@@ -701,8 +825,15 @@ window.addEventListener('load', function () {
             this.particles = [];
             this.explosions = [];
             this.floatingTexts = [];
+            
+            // Level Campaign Management
+            this.currentLevelIndex = 0;
+            this.currentLevelConfig = LEVELS[0];
+            this.levelCompleted = false;
+            this.allLevelsBeaten = false;
+
             this.enemyTimer = 0;
-            this.enemyInterval = 1800;
+            this.enemyInterval = this.currentLevelConfig.enemyInterval;
             this.ammo = 20;
             this.maxAmmo = 50;
             this.ammoTimer = 0;
@@ -712,30 +843,43 @@ window.addEventListener('load', function () {
             this.gameOver = false;
             this.gameOverReason = '';
             this.score = 0;
-            this.winningScore = 100;
             this.health = 100;
             this.maxHealth = 100;
             this.escapedCount = 0;
             this.gameTime = 0;
-            this.timeLimit = 35000; // 35s wave limit
             this.speed = 1;
             this.debug = false;
             this.maxParticles = 200;
-            this.wave = 1;
-            this.waveThreshold = 30;
+
             // Screen shake
             this.shakeIntensity = 0;
             this.shakeTimer = 0;
+
+            this.floatingTexts.push(
+                new FloatingText(`LEVEL 1: ${this.currentLevelConfig.name.toUpperCase()}`, this.width * 0.3, 220, '#6ee7ff', 32)
+            );
         }
+
         update(deltaTime) {
-            if (!this.gameOver) this.gameTime += deltaTime;
-            
-            // Win condition: time expired with health remaining OR reached target score
-            if (this.gameTime >= this.timeLimit && !this.gameOver) {
-                if (this.health > 0) {
+            if (!this.gameOver && !this.levelCompleted) {
+                this.gameTime += deltaTime;
+            }
+
+            // Check Level Completion Target
+            if (this.score >= this.currentLevelConfig.targetScore && !this.levelCompleted && !this.gameOver) {
+                this.triggerLevelComplete();
+            }
+
+            // Check Time Limit Expiration
+            if (this.gameTime >= this.currentLevelConfig.timeLimit && !this.gameOver && !this.levelCompleted) {
+                if (this.score >= this.currentLevelConfig.targetScore * 0.7 && this.health > 0) {
+                    // Time up but score sufficient -> Level cleared!
+                    this.triggerLevelComplete();
+                } else if (this.health <= 0) {
+                    this.gameOverReason = `DEFENSE BREACHED ON LEVEL ${this.currentLevelIndex + 1}!`;
                     this.gameOver = true;
                 } else {
-                    this.gameOverReason = 'TIME EXPIRED WITH DEFENSE BREACHED!';
+                    this.gameOverReason = `TIME EXPIRED ON LEVEL ${this.currentLevelIndex + 1}! (TARGET NOT MET)`;
                     this.gameOver = true;
                 }
             }
@@ -743,15 +887,7 @@ window.addEventListener('load', function () {
             this.background.update();
             this.player.update(deltaTime);
 
-            // Wave progression
-            const newWave = Math.floor(this.score / this.waveThreshold) + 1;
-            if (newWave > this.wave) {
-                this.wave = newWave;
-                this.enemyInterval = Math.max(550, 1800 - (this.wave - 1) * 160);
-                this.floatingTexts.push(
-                    new FloatingText(`WAVE ${this.wave} STARTED!`, this.width * 0.45, 200, '#6ee7ff')
-                );
-            }
+            if (this.levelCompleted || this.gameOver) return;
 
             // Ammo regeneration
             if (this.ammoTimer > this.ammoInterval) {
@@ -811,7 +947,7 @@ window.addEventListener('load', function () {
                         this.floatingTexts.push(
                             new FloatingText('+25 HP REPAIR!', this.player.x + 100, this.player.y, '#00ffc8')
                         );
-                    } else if (!this.gameOver) {
+                    } else if (!this.gameOver && !this.levelCompleted) {
                         const directDamage = 20;
                         this.health = Math.max(0, this.health - directDamage);
                         this.score = Math.max(0, this.score - 1);
@@ -820,7 +956,7 @@ window.addEventListener('load', function () {
                             new FloatingText(`-${directDamage} HP`, this.player.x + 100, this.player.y, '#ff3344')
                         );
                         if (this.health <= 0) {
-                            this.gameOverReason = 'SUBMARINE DESTROYED IN COMBAT!';
+                            this.gameOverReason = `SUBMARINE DESTROYED ON LEVEL ${this.currentLevelIndex + 1}!`;
                             this.gameOver = true;
                         }
                     }
@@ -862,7 +998,7 @@ window.addEventListener('load', function () {
                                 }
                             }
 
-                            if (!this.gameOver) {
+                            if (!this.gameOver && !this.levelCompleted) {
                                 this.score += enemy.score;
                                 this.floatingTexts.push(
                                     new FloatingText(
@@ -873,9 +1009,6 @@ window.addEventListener('load', function () {
                                     )
                                 );
                             }
-                            if (this.score >= this.winningScore && !this.gameOver) {
-                                this.gameOver = true;
-                            }
                         }
                     }
                 });
@@ -884,13 +1017,14 @@ window.addEventListener('load', function () {
             this.enemies = this.enemies.filter(enemy => !enemy.markedForDeletion);
 
             // Enemy Spawning
-            if (this.enemyTimer > this.enemyInterval && !this.gameOver) {
+            if (this.enemyTimer > this.enemyInterval && !this.gameOver && !this.levelCompleted) {
                 this.addEnemy();
                 this.enemyTimer = 0;
             } else {
                 this.enemyTimer += deltaTime;
             }
         }
+
         draw(context) {
             context.save();
             
@@ -908,19 +1042,55 @@ window.addEventListener('load', function () {
             this.explosions.forEach(explosion => explosion.draw(context));
             this.floatingTexts.forEach(ft => ft.draw(context));
             
-            // Foreground decoration layer
+            // Foreground layer
             this.background.layer4.draw(context);
             this.ui.draw(context);
 
             context.restore();
         }
-        addEnemy() {
-            const randomize = Math.random();
-            if (randomize < 0.45) this.enemies.push(new Angler1(this));
-            else if (randomize < 0.70) this.enemies.push(new Angler2(this));
-            else if (randomize < 0.82) this.enemies.push(new HiveWhale(this));
-            else this.enemies.push(new LuckyFish(this));
+
+        triggerLevelComplete() {
+            this.levelCompleted = true;
+            this.ui.overlayAlpha = 0;
+            this.ui.overlayPulse = 0;
+            if (this.currentLevelIndex >= LEVELS.length - 1) {
+                this.allLevelsBeaten = true;
+                this.gameOver = true;
+            }
         }
+
+        nextLevel() {
+            if (this.currentLevelIndex < LEVELS.length - 1) {
+                this.currentLevelIndex++;
+                this.currentLevelConfig = LEVELS[this.currentLevelIndex];
+                this.levelCompleted = false;
+                this.gameTime = 0;
+                this.enemyTimer = 0;
+                this.enemyInterval = this.currentLevelConfig.enemyInterval;
+                this.enemies = [];
+                this.player.projectiles = [];
+                
+                // Reward player on level advance: +30 HP repair & full ammo!
+                this.health = Math.min(this.maxHealth, this.health + 30);
+                this.ammo = this.maxAmmo;
+                
+                this.floatingTexts.push(
+                    new FloatingText(`LEVEL ${this.currentLevelIndex + 1}: ${this.currentLevelConfig.name.toUpperCase()}`, this.width * 0.25, 220, '#6ee7ff', 32)
+                );
+            }
+        }
+
+        addEnemy() {
+            const pool = this.currentLevelConfig.unlockedEnemies;
+            const chosenType = pool[Math.floor(Math.random() * pool.length)];
+
+            if (chosenType === 'angler1') this.enemies.push(new Angler1(this));
+            else if (chosenType === 'angler2') this.enemies.push(new Angler2(this));
+            else if (chosenType === 'hive') this.enemies.push(new HiveWhale(this));
+            else if (chosenType === 'drone') this.enemies.push(new Drone(this, this.width, Math.random() * (this.height * 0.8)));
+            else if (chosenType === 'lucky') this.enemies.push(new LuckyFish(this));
+        }
+
         addExplosion(enemy) {
             const randomize = Math.random();
             if (randomize < 0.5) {
@@ -941,6 +1111,7 @@ window.addEventListener('load', function () {
                 );
             }
         }
+
         checkCollision(rect1, rect2) {
             return (
                 rect1.x < rect2.x + rect2.width &&
@@ -949,11 +1120,18 @@ window.addEventListener('load', function () {
                 rect1.y + rect1.height > rect2.y
             );
         }
+
         triggerShake(intensity, duration) {
             this.shakeIntensity = intensity;
             this.shakeTimer = duration;
         }
+
         restart() {
+            this.currentLevelIndex = 0;
+            this.currentLevelConfig = LEVELS[0];
+            this.levelCompleted = false;
+            this.allLevelsBeaten = false;
+            
             this.enemies = [];
             this.particles = [];
             this.explosions = [];
@@ -964,21 +1142,27 @@ window.addEventListener('load', function () {
             this.player.powerUp = false;
             this.player.powerUpTimer = 0;
             this.player.frameY = 1;
+            
             this.ammo = 20;
             this.ammoTimer = 0;
             this.enemyTimer = 0;
-            this.enemyInterval = 1800;
+            this.enemyInterval = this.currentLevelConfig.enemyInterval;
+            
             this.gameOver = false;
             this.gameOverReason = '';
             this.score = 0;
             this.health = 100;
             this.escapedCount = 0;
             this.gameTime = 0;
-            this.wave = 1;
+            
             this.shakeIntensity = 0;
             this.shakeTimer = 0;
-            this.ui.gameOverAlpha = 0;
-            this.ui.gameOverPulse = 0;
+            this.ui.overlayAlpha = 0;
+            this.ui.overlayPulse = 0;
+
+            this.floatingTexts.push(
+                new FloatingText(`LEVEL 1: ${this.currentLevelConfig.name.toUpperCase()}`, this.width * 0.3, 220, '#6ee7ff', 32)
+            );
         }
     }
 
