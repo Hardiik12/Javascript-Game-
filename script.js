@@ -1,1030 +1,997 @@
-import * as THREE from 'three';
-
-// ────────────────────────────────────────────
-//  CONSTANTS
-// ────────────────────────────────────────────
-const GAME_WIDTH = 80;     // world units visible width
-const GAME_HEIGHT = 40;    // world units visible height
-const WINNING_SCORE = 100;
-const TIME_LIMIT = 30;     // seconds
-const MAX_AMMO = 50;
-const AMMO_REGEN_INTERVAL = 0.35; // seconds
-const MAX_PARTICLES = 200;
-const WAVE_THRESHOLD = 30;
-
-// ────────────────────────────────────────────
-//  HUD DOM REFS
-// ────────────────────────────────────────────
-const hudScore = document.getElementById('hud-score');
-const hudWave = document.getElementById('hud-wave');
-const hudAmmo = document.getElementById('hud-ammo');
-const hudTimer = document.getElementById('hud-timer');
-const hudTimerText = document.getElementById('hud-timer-text');
-const gameOverOverlay = document.getElementById('game-over-overlay');
-const gameOverTitle = document.getElementById('game-over-title');
-const gameOverSubtitle = document.getElementById('game-over-subtitle');
-const gameOverScore = document.getElementById('game-over-score');
-
-// ────────────────────────────────────────────
-//  THREE.JS SETUP
-// ────────────────────────────────────────────
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x0a84c1); // Vibrant tropical ocean blue
-scene.fog = new THREE.FogExp2(0x0d72a5, 0.015); // Clear blue water fog
-
-const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 200);
-camera.position.set(0, 5, 45);
-camera.lookAt(0, 0, 0);
-
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.4;
-document.getElementById('game-container').appendChild(renderer.domElement);
-
-// ── Lighting ──
-// Bright ambient sky/water fill
-const ambientLight = new THREE.AmbientLight(0x76d7ff, 1.4);
-scene.add(ambientLight);
-
-// Sun light penetrating water surface
-const dirLight = new THREE.DirectionalLight(0xffffff, 2.2);
-dirLight.position.set(10, 40, 20);
-dirLight.castShadow = true;
-dirLight.shadow.mapSize.set(1024, 1024);
-dirLight.shadow.camera.near = 1;
-dirLight.shadow.camera.far = 100;
-dirLight.shadow.camera.left = -50;
-dirLight.shadow.camera.right = 50;
-dirLight.shadow.camera.top = 30;
-dirLight.shadow.camera.bottom = -30;
-scene.add(dirLight);
-
-// Hemisphere light (sky blue top, teal bottom)
-const hemiLight = new THREE.HemisphereLight(0x80e5ff, 0x005c8a, 1.2);
-scene.add(hemiLight);
-
-// Caustic-like moving light
-const causticLight = new THREE.PointLight(0x80ffff, 1.5, 120);
-causticLight.position.set(0, 25, 10);
-scene.add(causticLight);
-
-// ── Seabed (Bright Sandy Floor) ──
-const seabedGeo = new THREE.PlaneGeometry(200, 200, 40, 40);
-const positions = seabedGeo.attributes.position;
-for (let i = 0; i < positions.count; i++) {
-    positions.setZ(i, (Math.random() - 0.5) * 2.5);
-}
-seabedGeo.computeVertexNormals();
-const seabedMat = new THREE.MeshStandardMaterial({
-    color: 0xdfb15b, // Golden ocean sand
-    roughness: 0.8,
-    metalness: 0.1,
-    flatShading: true
-});
-const seabed = new THREE.Mesh(seabedGeo, seabedMat);
-seabed.rotation.x = -Math.PI * 0.5;
-seabed.position.y = -18;
-seabed.receiveShadow = true;
-scene.add(seabed);
-
-// ── Underwater Bubbles (environment) ──
-const bubbleCount = 80;
-const bubbleGeo = new THREE.SphereGeometry(0.15, 8, 8);
-const bubbleMat = new THREE.MeshPhysicalMaterial({
-    color: 0x88ddff,
-    transparent: true,
-    opacity: 0.25,
-    roughness: 0.1,
-    metalness: 0,
-    transmission: 0.8,
-});
-const bubbles = [];
-for (let i = 0; i < bubbleCount; i++) {
-    const b = new THREE.Mesh(bubbleGeo, bubbleMat.clone());
-    b.position.set(
-        (Math.random() - 0.5) * 100,
-        (Math.random() - 0.5) * 40,
-        (Math.random() - 0.5) * 30 - 5
-    );
-    const s = 0.3 + Math.random() * 1;
-    b.scale.set(s, s, s);
-    b.userData.speedY = 0.5 + Math.random() * 1.5;
-    b.userData.wobble = Math.random() * Math.PI * 2;
-    scene.add(b);
-    bubbles.push(b);
-}
-
-// ── Kelp / Coral decoration (Vibrant Reef) ──
-const coralColors = [0xff2a75, 0x00e5ff, 0x2ecc71, 0xff9f43, 0x9b59b6, 0x1dd1a1];
-for (let i = 0; i < 30; i++) {
-    const height = 2 + Math.random() * 7;
-    const geo = new THREE.CylinderGeometry(0.15, 0.45, height, 6);
-    const color = coralColors[Math.floor(Math.random() * coralColors.length)];
-    const coralMat = new THREE.MeshStandardMaterial({ color, roughness: 0.5, flatShading: true });
-    const mesh = new THREE.Mesh(geo, coralMat);
-    mesh.position.set(
-        (Math.random() - 0.5) * 130,
-        -18 + height * 0.5,
-        (Math.random() - 0.5) * 25 - 5
-    );
-    mesh.rotation.z = (Math.random() - 0.5) * 0.35;
-    mesh.castShadow = true;
-    scene.add(mesh);
-    // sphere on top
-    if (Math.random() > 0.3) {
-        const sg = new THREE.SphereGeometry(0.5 + Math.random() * 0.6, 6, 6);
-        const smMat = new THREE.MeshStandardMaterial({
-            color: coralColors[Math.floor(Math.random() * coralColors.length)],
-            roughness: 0.4,
-            flatShading: true
-        });
-        const sm = new THREE.Mesh(sg, smMat);
-        sm.position.copy(mesh.position);
-        sm.position.y += height * 0.5;
-        scene.add(sm);
-    }
-}
-
-// ────────────────────────────────────────────
-//  PROCEDURAL MODEL BUILDERS
-// ────────────────────────────────────────────
-
-function createSubmarine() {
-    const group = new THREE.Group();
-
-    // body - Vibrant Yellow Submarine style with orange accents
-    const bodyGeo = new THREE.CapsuleGeometry(1.2, 4, 8, 16);
-    const bodyMat = new THREE.MeshStandardMaterial({ color: 0xffb703, metalness: 0.3, roughness: 0.2 });
-    const body = new THREE.Mesh(bodyGeo, bodyMat);
-    body.rotation.z = Math.PI * 0.5;
-    body.castShadow = true;
-    group.add(body);
-
-    // orange stripe / conning tower
-    const towerGeo = new THREE.BoxGeometry(1.2, 1, 0.8);
-    const towerMat = new THREE.MeshStandardMaterial({ color: 0xfb8500, metalness: 0.3, roughness: 0.3 });
-    const tower = new THREE.Mesh(towerGeo, towerMat);
-    tower.position.set(-0.3, 1.2, 0);
-    tower.castShadow = true;
-    group.add(tower);
-
-    // periscope
-    const periGeo = new THREE.CylinderGeometry(0.1, 0.1, 0.8, 8);
-    const periMat = new THREE.MeshStandardMaterial({ color: 0x023e8a, metalness: 0.8 });
-    const peri = new THREE.Mesh(periGeo, periMat);
-    peri.position.set(-0.3, 1.9, 0);
-    group.add(peri);
-
-    // windows (glowing cyan portholes)
-    const portGeo = new THREE.SphereGeometry(0.3, 8, 8);
-    const portMat = new THREE.MeshBasicMaterial({ color: 0x00f5d4 });
-    for (let i = 0; i < 3; i++) {
-        const port1 = new THREE.Mesh(portGeo, portMat);
-        port1.position.set(-1.2 + i * 1.0, 0.2, 1.1);
-        group.add(port1);
-
-        const port2 = new THREE.Mesh(portGeo, portMat);
-        port2.position.set(-1.2 + i * 1.0, 0.2, -1.1);
-        group.add(port2);
-    }
-
-    // propeller hub
-    const propGeo = new THREE.CylinderGeometry(0.15, 0.15, 0.3, 8);
-    const propMat = new THREE.MeshStandardMaterial({ color: 0x023e8a, metalness: 0.8 });
-    const prop = new THREE.Mesh(propGeo, propMat);
-    prop.position.set(-3.2, 0, 0);
-    prop.rotation.z = Math.PI * 0.5;
-    group.add(prop);
-
-    // propeller blades
-    const bladeGroup = new THREE.Group();
-    const bladeGeo = new THREE.BoxGeometry(0.1, 1.5, 0.3);
-    for (let i = 0; i < 4; i++) {
-        const blade = new THREE.Mesh(bladeGeo, propMat);
-        blade.rotation.x = (Math.PI / 2) * i;
-        bladeGroup.add(blade);
-    }
-    bladeGroup.position.set(-3.4, 0, 0);
-    group.add(bladeGroup);
-    group.userData.propeller = bladeGroup;
-
-    // engine glow
-    const glowMat = new THREE.MeshBasicMaterial({ color: 0x00f5d4 });
-    const glowGeo = new THREE.SphereGeometry(0.4, 8, 8);
-    const glow = new THREE.Mesh(glowGeo, glowMat);
-    glow.position.set(3.2, 0, 0);
-    group.add(glow);
-
-    // point light on front
-    const headlight = new THREE.PointLight(0x00f5d4, 1.8, 25);
-    headlight.position.set(3.5, 0, 0);
-    group.add(headlight);
-
-    return group;
-}
-
-function createAnglerFish(color, size, lureColor) {
-    const group = new THREE.Group();
-
-    // body
-    const bodyGeo = new THREE.SphereGeometry(size, 10, 8);
-    bodyGeo.scale(1.5, 1, 1);
-    const bodyMat = new THREE.MeshStandardMaterial({ color, roughness: 0.4, metalness: 0.1, flatShading: true });
-    const body = new THREE.Mesh(bodyGeo, bodyMat);
-    body.castShadow = true;
-    group.add(body);
-
-    // mouth
-    const mouthGeo = new THREE.ConeGeometry(size * 0.6, size * 1.2, 8);
-    const mouthMat = new THREE.MeshStandardMaterial({ color: 0xff4757, roughness: 0.5, flatShading: true });
-    const mouth = new THREE.Mesh(mouthGeo, mouthMat);
-    mouth.rotation.z = Math.PI * 0.5;
-    mouth.position.set(size * 1.6, 0, 0);
-    group.add(mouth);
-
-    // tail fin
-    const tailGeo = new THREE.ConeGeometry(size * 0.7, size * 0.8, 4);
-    const tail = new THREE.Mesh(tailGeo, bodyMat);
-    tail.rotation.z = -Math.PI * 0.5;
-    tail.position.set(-size * 1.6, 0, 0);
-    group.add(tail);
-
-    // dorsal fin
-    const finGeo = new THREE.ConeGeometry(size * 0.3, size * 0.8, 4);
-    const fin = new THREE.Mesh(finGeo, bodyMat);
-    fin.position.set(-size * 0.3, size * 0.9, 0);
-    group.add(fin);
-
-    // eye
-    const eyeGeo = new THREE.SphereGeometry(size * 0.22, 8, 8);
-    const eyeMat = new THREE.MeshBasicMaterial({ color: 0xfffa65 });
-    const eye = new THREE.Mesh(eyeGeo, eyeMat);
-    eye.position.set(size * 0.7, size * 0.4, size * 0.6);
-    group.add(eye);
-    const eye2 = eye.clone();
-    eye2.position.z = -size * 0.6;
-    group.add(eye2);
-
-    // lure (angler light)
-    const lureGeo = new THREE.SphereGeometry(size * 0.25, 8, 8);
-    const lureMat = new THREE.MeshBasicMaterial({ color: lureColor });
-    const lure = new THREE.Mesh(lureGeo, lureMat);
-    lure.position.set(size * 0.5, size * 1.3, 0);
-    group.add(lure);
-
-    const lureLight = new THREE.PointLight(lureColor, 1.2, 12);
-    lureLight.position.copy(lure.position);
-    group.add(lureLight);
-
-    // stalk
-    const stalkGeo = new THREE.CylinderGeometry(0.06, 0.06, size * 0.8, 4);
-    const stalkMat = new THREE.MeshStandardMaterial({ color });
-    const stalk = new THREE.Mesh(stalkGeo, stalkMat);
-    stalk.position.set(size * 0.5, size * 0.9, 0);
-    group.add(stalk);
-
-    return group;
-}
-
-function createLuckyFish() {
-    const group = new THREE.Group();
-    const bodyGeo = new THREE.SphereGeometry(1, 10, 8);
-    bodyGeo.scale(1.3, 1, 0.7);
-    const bodyMat = new THREE.MeshStandardMaterial({
-        color: 0xffd700,
-        metalness: 0.6,
-        roughness: 0.1,
-        emissive: 0xff9f43,
-        emissiveIntensity: 0.5
-    });
-    const body = new THREE.Mesh(bodyGeo, bodyMat);
-    body.castShadow = true;
-    group.add(body);
-
-    // tail
-    const tailGeo = new THREE.ConeGeometry(0.6, 0.8, 4);
-    const tail = new THREE.Mesh(tailGeo, bodyMat);
-    tail.rotation.z = -Math.PI * 0.5;
-    tail.position.set(-1.5, 0, 0);
-    group.add(tail);
-
-    // fins
-    const finGeo = new THREE.ConeGeometry(0.3, 0.7, 4);
-    const fin1 = new THREE.Mesh(finGeo, bodyMat);
-    fin1.position.set(0, 0.9, 0);
-    group.add(fin1);
-
-    // glow
-    const glowLight = new THREE.PointLight(0xfffa65, 1.5, 15);
-    group.add(glowLight);
-
-    return group;
-}
-
-function createHiveWhale() {
-    const group = new THREE.Group();
-
-    // massive body - Vibrant Royal Purple/Blue
-    const bodyGeo = new THREE.SphereGeometry(3, 12, 10);
-    bodyGeo.scale(2.2, 1, 1);
-    const bodyMat = new THREE.MeshStandardMaterial({
-        color: 0x341f97,
-        roughness: 0.4,
-        metalness: 0.2,
-        flatShading: true
-    });
-    const body = new THREE.Mesh(bodyGeo, bodyMat);
-    body.castShadow = true;
-    group.add(body);
-
-    // glowing neon ridges
-    const ridgeMat = new THREE.MeshStandardMaterial({ color: 0x00d2d3, emissive: 0x00d2d3, emissiveIntensity: 0.6 });
-    for (let i = 0; i < 5; i++) {
-        const ridgeGeo = new THREE.BoxGeometry(0.6, 0.8, 1.5);
-        const ridge = new THREE.Mesh(ridgeGeo, ridgeMat);
-        ridge.position.set(-2 + i * 1.2, 2.8, 0);
-        group.add(ridge);
-    }
-
-    // tail
-    const tailGeo = new THREE.ConeGeometry(2, 3, 6);
-    const tail = new THREE.Mesh(tailGeo, bodyMat);
-    tail.rotation.z = -Math.PI * 0.5;
-    tail.position.set(-6, 0, 0);
-    group.add(tail);
-
-    // eye
-    const eyeGeo = new THREE.SphereGeometry(0.4, 8, 8);
-    const eyeMat = new THREE.MeshBasicMaterial({ color: 0xff4757 });
-    const eye = new THREE.Mesh(eyeGeo, eyeMat);
-    eye.position.set(4.5, 1, 2.5);
-    group.add(eye);
-    const eye2 = eye.clone();
-    eye2.position.z = -2.5;
-    group.add(eye2);
-
-    return group;
-}
-
-function createDrone() {
-    const group = new THREE.Group();
-
-    const bodyGeo = new THREE.OctahedronGeometry(0.8, 0);
-    const bodyMat = new THREE.MeshStandardMaterial({
-        color: 0xff4757,
-        metalness: 0.5,
-        roughness: 0.2,
-        emissive: 0xff6b81,
-        emissiveIntensity: 0.4
-    });
-    const body = new THREE.Mesh(bodyGeo, bodyMat);
-    body.castShadow = true;
-    group.add(body);
-
-    // ring
-    const ringGeo = new THREE.TorusGeometry(1.1, 0.08, 8, 24);
-    const ringMat = new THREE.MeshStandardMaterial({ color: 0x00d2d3, metalness: 0.7, roughness: 0.1 });
-    const ring = new THREE.Mesh(ringGeo, ringMat);
-    group.add(ring);
-    group.userData.ring = ring;
-
-    // glow
-    const light = new THREE.PointLight(0xff4757, 0.8, 8);
-    group.add(light);
-
-    return group;
-}
-
-function createTorpedo() {
-    const group = new THREE.Group();
-
-    const bodyGeo = new THREE.CylinderGeometry(0.12, 0.12, 1.2, 8);
-    const bodyMat = new THREE.MeshStandardMaterial({
-        color: 0x00ddff,
-        emissive: 0x0088ff,
-        emissiveIntensity: 0.6,
-        metalness: 0.5
-    });
-    const body = new THREE.Mesh(bodyGeo, bodyMat);
-    body.rotation.z = Math.PI * 0.5;
-    group.add(body);
-
-    // nose cone
-    const noseGeo = new THREE.ConeGeometry(0.12, 0.4, 8);
-    const nose = new THREE.Mesh(noseGeo, bodyMat);
-    nose.rotation.z = -Math.PI * 0.5;
-    nose.position.set(0.8, 0, 0);
-    group.add(nose);
-
-    // glow
-    const light = new THREE.PointLight(0x00ccff, 0.4, 6);
-    group.add(light);
-
-    return group;
-}
-
-// ────────────────────────────────────────────
-//  GAME STATE
-// ────────────────────────────────────────────
-const state = {
-    keys: new Set(),
-    score: 0,
-    wave: 1,
-    ammo: 20,
-    ammoTimer: 0,
-    gameTime: 0,
-    gameOver: false,
-    debug: false,
-    speed: 1,
-    shakeTimer: 0,
-    shakeIntensity: 0,
-    // original camera pos for shake reset
-    camBasePos: new THREE.Vector3(0, 5, 45),
-};
-
-// ── Entity Arrays ──
-let playerObj, playerData;
-const enemies = [];
-const projectiles = [];
-const particles = [];
-const explosions = [];
-const floatingTexts = []; // we handle these as 3D sprites
-
-// ────────────────────────────────────────────
-//  PLAYER
-// ────────────────────────────────────────────
-playerObj = createSubmarine();
-playerObj.position.set(-30, 0, 0);
-scene.add(playerObj);
-playerData = {
-    speedY: 0,
-    maxSpeed: 0.4,
-    powerUp: false,
-    powerUpTimer: 0,
-    powerUpLimit: 10,
-    y: 0,
-};
-
-// ────────────────────────────────────────────
-//  INPUT
-// ────────────────────────────────────────────
-window.addEventListener('keydown', e => {
-    state.keys.add(e.key);
-    if (e.key === ' ') shoot();
-    if (e.key === 'd') state.debug = !state.debug;
-    if (e.key === 'Enter' && state.gameOver) restart();
-});
-window.addEventListener('keyup', e => state.keys.delete(e.key));
-
-window.addEventListener('resize', () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-});
-
-// ────────────────────────────────────────────
-//  SHOOTING
-// ────────────────────────────────────────────
-function shoot() {
-    if (state.gameOver || state.ammo <= 0) return;
-    spawnTorpedo(playerObj.position.x + 4, playerObj.position.y + 0.3, 0);
-    state.ammo--;
-    if (playerData.powerUp && state.ammo > 0) {
-        spawnTorpedo(playerObj.position.x + 4, playerObj.position.y - 0.5, 0);
-        state.ammo--;
-    }
-}
-
-function spawnTorpedo(x, y, z) {
-    const t = createTorpedo();
-    t.position.set(x, y, z);
-    scene.add(t);
-    projectiles.push({
-        mesh: t,
-        speed: 0.6,
-        markedForDeletion: false,
-        width: 1.2,
-        height: 0.24,
-        get x() { return t.position.x - 0.6; },
-        get y() { return t.position.y - 0.12; },
-    });
-}
-
-// ────────────────────────────────────────────
-//  ENEMY SPAWNING
-// ────────────────────────────────────────────
-let enemyTimer = 0;
-let enemyInterval = 2;
-
-function addEnemy() {
-    const r = Math.random();
-    let mesh, data;
-    const spawnX = 50;
-
-    if (r < 0.5) {
-        // Angler1 - Vibrant Emerald Teal
-        mesh = createAnglerFish(0x00b894, 1.5, 0x00efff);
-        const y = (Math.random() - 0.5) * 28;
-        mesh.position.set(spawnX, y, (Math.random() - 0.5) * 6);
-        data = { lives: 5, score: 5, speedX: 0.08 + Math.random() * 0.12, width: 5, height: 3 };
-    } else if (r < 0.6) {
-        // Angler2 - Vibrant Neon Magenta/Purple
-        mesh = createAnglerFish(0x9b59b6, 1.8, 0xff007f);
-        const y = (Math.random() - 0.5) * 28;
-        mesh.position.set(spawnX, y, (Math.random() - 0.5) * 6);
-        data = { lives: 6, score: 6, speedX: 0.07 + Math.random() * 0.1, width: 6, height: 3.5 };
-    } else if (r < 0.7) {
-        // Hive Whale
-        mesh = createHiveWhale();
-        const y = (Math.random() - 0.5) * 20;
-        mesh.position.set(spawnX + 5, y, (Math.random() - 0.5) * 4);
-        data = { lives: 20, score: 20, speedX: 0.04 + Math.random() * 0.04, width: 14, height: 6, type: 'hive' };
-    } else {
-        // Lucky Fish
-        mesh = createLuckyFish();
-        const y = (Math.random() - 0.5) * 28;
-        mesh.position.set(spawnX, y, (Math.random() - 0.5) * 6);
-        data = { lives: 5, score: 15, speedX: 0.06 + Math.random() * 0.1, width: 3, height: 2, type: 'lucky' };
-    }
-
-    mesh.castShadow = true;
-    scene.add(mesh);
-    enemies.push({
-        mesh,
-        ...data,
-        markedForDeletion: false,
-        get x() { return mesh.position.x - this.width * 0.5; },
-        get y() { return mesh.position.y - this.height * 0.5; },
-    });
-}
-
-function spawnDrone(x, y) {
-    const mesh = createDrone();
-    mesh.position.set(x, y, (Math.random() - 0.5) * 4);
-    scene.add(mesh);
-    enemies.push({
-        mesh,
-        lives: 3,
-        score: 3,
-        speedX: 0.15 + Math.random() * 0.2,
-        width: 2.2,
-        height: 2.2,
-        type: 'drone',
-        markedForDeletion: false,
-        get x() { return mesh.position.x - this.width * 0.5; },
-        get y() { return mesh.position.y - this.height * 0.5; },
-    });
-}
-
-// ────────────────────────────────────────────
-//  PARTICLES & EXPLOSIONS
-// ────────────────────────────────────────────
-const debrisGeo = new THREE.OctahedronGeometry(0.2, 0);
-const debrisMats = [
-    new THREE.MeshStandardMaterial({ color: 0x888888, metalness: 0.6, flatShading: true }),
-    new THREE.MeshStandardMaterial({ color: 0x666666, metalness: 0.7, flatShading: true }),
-    new THREE.MeshStandardMaterial({ color: 0xaaaaaa, metalness: 0.5, flatShading: true }),
-];
-
-function spawnDebris(x, y, z, count) {
-    for (let i = 0; i < count && particles.length < MAX_PARTICLES; i++) {
-        const m = new THREE.Mesh(debrisGeo, debrisMats[Math.floor(Math.random() * 3)]);
-        m.position.set(x, y, z);
-        const s = 0.3 + Math.random() * 0.7;
-        m.scale.set(s, s, s);
-        scene.add(m);
-        particles.push({
-            mesh: m,
-            vx: (Math.random() - 0.5) * 0.4,
-            vy: (Math.random() - 0.2) * 0.5,
-            vz: (Math.random() - 0.5) * 0.3,
-            gravity: -0.008,
-            rotSpeed: new THREE.Vector3(
-                (Math.random() - 0.5) * 0.2,
-                (Math.random() - 0.5) * 0.2,
-                (Math.random() - 0.5) * 0.2
-            ),
-            life: 2 + Math.random() * 2,
-            age: 0,
-            markedForDeletion: false,
-        });
-    }
-}
-
-function spawnExplosion(x, y, z) {
-    const count = 12;
-    for (let i = 0; i < count; i++) {
-        const geo = new THREE.SphereGeometry(0.15 + Math.random() * 0.3, 6, 6);
-        const color = Math.random() > 0.5 ? 0xff6622 : 0xffaa00;
-        const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1 });
-        const m = new THREE.Mesh(geo, mat);
-        m.position.set(x, y, z);
-        scene.add(m);
-        explosions.push({
-            mesh: m,
-            vx: (Math.random() - 0.5) * 0.5,
-            vy: (Math.random() - 0.5) * 0.5,
-            vz: (Math.random() - 0.5) * 0.4,
-            life: 0.6 + Math.random() * 0.6,
-            age: 0,
-            markedForDeletion: false,
-        });
-    }
-    // flash light
-    const flash = new THREE.PointLight(0xff8833, 3, 20);
-    flash.position.set(x, y, z);
-    scene.add(flash);
-    setTimeout(() => scene.remove(flash), 200);
-}
-
-// ── Floating 3D Score Text ──
-function spawnFloatingText(value, x, y, z) {
-    const canvas = document.createElement('canvas');
-    canvas.width = 128;
-    canvas.height = 64;
-    const ctx2d = canvas.getContext('2d');
-    ctx2d.font = 'bold 40px Orbitron, sans-serif';
-    ctx2d.textAlign = 'center';
-    ctx2d.textBaseline = 'middle';
-    ctx2d.fillStyle = value > 0 ? '#00ffc8' : '#ff6666';
-    ctx2d.shadowColor = value > 0 ? '#00ff88' : '#ff4444';
-    ctx2d.shadowBlur = 12;
-    ctx2d.fillText((value > 0 ? '+' : '') + value, 64, 32);
-
-    const texture = new THREE.CanvasTexture(canvas);
-    const spriteMat = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false });
-    const sprite = new THREE.Sprite(spriteMat);
-    sprite.position.set(x, y + 1, z);
-    sprite.scale.set(4, 2, 1);
-    scene.add(sprite);
-
-    floatingTexts.push({
-        sprite,
-        vy: 0.03,
-        life: 1.5,
-        age: 0,
-        markedForDeletion: false,
-    });
-}
-
-// ────────────────────────────────────────────
-//  COLLISION
-// ────────────────────────────────────────────
-function checkCollision(a, b) {
-    return (
-        a.x < b.x + b.width &&
-        a.x + a.width > b.x &&
-        a.y < b.y + b.height &&
-        a.y + a.height > b.y
-    );
-}
-
-// player bounding box
-const playerBB = {
-    width: 6,
-    height: 2.4,
-    get x() { return playerObj.position.x - 3; },
-    get y() { return playerObj.position.y - 1.2; },
-};
-
-// ────────────────────────────────────────────
-//  SCREEN SHAKE
-// ────────────────────────────────────────────
-function triggerShake(intensity, duration) {
-    state.shakeIntensity = intensity;
-    state.shakeTimer = duration;
-}
-
-// ────────────────────────────────────────────
-//  UPDATE HUD
-// ────────────────────────────────────────────
-function updateHUD() {
-    hudScore.textContent = Math.floor(state.score);
-    hudWave.textContent = state.wave;
-
-    const ammoRatio = Math.min(state.ammo / MAX_AMMO, 1);
-    hudAmmo.style.width = (ammoRatio * 100) + '%';
-    hudAmmo.classList.toggle('powered-up', playerData.powerUp);
-
-    const timeRatio = Math.max(0, 1 - state.gameTime / TIME_LIMIT);
-    hudTimer.style.width = (timeRatio * 100) + '%';
-    hudTimer.classList.toggle('danger', timeRatio <= 0.3);
-    hudTimerText.classList.toggle('danger', timeRatio <= 0.3);
-    const timeLeft = Math.max(0, TIME_LIMIT - state.gameTime).toFixed(1);
-    hudTimerText.textContent = timeLeft + 's';
-}
-
-// ────────────────────────────────────────────
-//  GAME OVER
-// ────────────────────────────────────────────
-function showGameOver() {
-    const won = state.score >= WINNING_SCORE;
-    gameOverTitle.textContent = won ? 'Most Wondrous!' : 'Blazes!';
-    gameOverTitle.classList.toggle('won', won);
-    gameOverSubtitle.textContent = won ? 'Well done explorer!' : 'Better luck next time!';
-    gameOverScore.textContent = 'Final Score: ' + Math.floor(state.score);
-    gameOverOverlay.classList.remove('hidden');
-    // trigger transition on next frame
-    requestAnimationFrame(() => gameOverOverlay.classList.add('visible'));
-}
-
-// ────────────────────────────────────────────
-//  RESTART
-// ────────────────────────────────────────────
-function restart() {
-    // clear entities
-    enemies.forEach(e => scene.remove(e.mesh));
-    enemies.length = 0;
-    projectiles.forEach(p => scene.remove(p.mesh));
-    projectiles.length = 0;
-    particles.forEach(p => scene.remove(p.mesh));
-    particles.length = 0;
-    explosions.forEach(e => scene.remove(e.mesh));
-    explosions.length = 0;
-    floatingTexts.forEach(f => scene.remove(f.sprite));
-    floatingTexts.length = 0;
-
-    // reset state
-    state.score = 0;
-    state.wave = 1;
-    state.ammo = 20;
-    state.ammoTimer = 0;
-    state.gameTime = 0;
-    state.gameOver = false;
-    state.shakeTimer = 0;
-    state.shakeIntensity = 0;
-    enemyTimer = 0;
-    enemyInterval = 2;
-
-    playerData.powerUp = false;
-    playerData.powerUpTimer = 0;
-    playerObj.position.set(-30, 0, 0);
-
-    gameOverOverlay.classList.remove('visible');
-    setTimeout(() => gameOverOverlay.classList.add('hidden'), 600);
-}
-
-// ────────────────────────────────────────────
-//  MAIN LOOP
-// ────────────────────────────────────────────
-const clock = new THREE.Clock();
-
-function animate() {
-    requestAnimationFrame(animate);
-    const dt = Math.min(clock.getDelta(), 0.05); // cap delta
-
-    // ── Update game time ──
-    if (!state.gameOver) {
-        state.gameTime += dt;
-        if (state.gameTime >= TIME_LIMIT) {
-            state.gameOver = true;
-            showGameOver();
+window.addEventListener('load', function () {
+    // canvas setup
+    const canvas = document.getElementById('canvas1');
+    const ctx = canvas.getContext('2d');
+    canvas.width = 1500;
+    canvas.height = 500;
+
+    class InputHandler {
+        constructor(game) {
+            this.game = game;
+            window.addEventListener('keydown', e => {
+                if (
+                    (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'w' || e.key === 's') &&
+                    this.game.keys.indexOf(e.key) === -1
+                ) {
+                    this.game.keys.push(e.key);
+                } else if (e.key === ' ') {
+                    this.game.player.shootTop();
+                } else if (e.key === 'd' || e.key === 'D') {
+                    this.game.debug = !this.game.debug;
+                } else if (e.key === 'Enter' && this.game.gameOver) {
+                    this.game.restart();
+                }
+            });
+            window.addEventListener('keyup', e => {
+                if (this.game.keys.indexOf(e.key) > -1) {
+                    this.game.keys.splice(this.game.keys.indexOf(e.key), 1);
+                }
+            });
         }
     }
 
-    // ── Player movement ──
-    if (!state.gameOver) {
-        if (state.keys.has('ArrowUp')) playerData.speedY = playerData.maxSpeed;
-        else if (state.keys.has('ArrowDown')) playerData.speedY = -playerData.maxSpeed;
-        else playerData.speedY *= 0.9; // decelerate smoothly
-
-        playerObj.position.y += playerData.speedY;
-        // clamp
-        playerObj.position.y = THREE.MathUtils.clamp(playerObj.position.y, -14, 14);
-        // tilt on movement
-        playerObj.rotation.z = THREE.MathUtils.lerp(playerObj.rotation.z, playerData.speedY * 0.5, 0.1);
-    }
-
-    // ── Propeller spin ──
-    if (playerObj.userData.propeller) {
-        playerObj.userData.propeller.rotation.x += 0.3;
-    }
-
-    // ── Ammo regen ──
-    if (!state.gameOver) {
-        state.ammoTimer += dt;
-        if (state.ammoTimer >= AMMO_REGEN_INTERVAL) {
-            if (state.ammo < MAX_AMMO) state.ammo++;
-            state.ammoTimer = 0;
+    class Projectile {
+        constructor(game, x, y) {
+            this.game = game;
+            this.x = x;
+            this.y = y;
+            this.width = 10;
+            this.height = 3;
+            this.speed = 4;
+            this.markedForDeletion = false;
+            this.image = document.getElementById('projectile');
+        }
+        update() {
+            this.x += this.speed;
+            if (this.x > this.game.width * 0.95) this.markedForDeletion = true;
+        }
+        draw(context) {
+            context.drawImage(this.image, this.x, this.y);
         }
     }
 
-    // ── Power-up ──
-    if (playerData.powerUp) {
-        playerData.powerUpTimer += dt;
-        if (playerData.powerUpTimer >= playerData.powerUpLimit) {
-            playerData.powerUp = false;
-            playerData.powerUpTimer = 0;
-        } else {
-            state.ammo = Math.min(state.ammo + dt * 3, MAX_AMMO);
+    class Particle {
+        constructor(game, x, y) {
+            this.game = game;
+            this.x = x;
+            this.y = y;
+            this.image = document.getElementById('gears');
+            this.frameX = Math.floor(Math.random() * 3);
+            this.frameY = Math.floor(Math.random() * 3);
+            this.spriteSize = 50;
+            this.sizeModifier = (Math.random() * 0.5 + 0.5).toFixed(1);
+            this.size = this.spriteSize * this.sizeModifier;
+            this.speedX = Math.random() * 6 - 3;
+            this.speedY = Math.random() * -15;
+            this.gravity = 0.5;
+            this.markedForDeletion = false;
+            this.angle = 0;
+            this.va = Math.random() * 0.2 - 0.1;
+            this.bounced = 0;
+            this.bottomBounceBoundary = Math.random() * 80 + 60;
         }
-    }
-
-    // ── Wave progression ──
-    const newWave = Math.floor(state.score / WAVE_THRESHOLD) + 1;
-    if (newWave > state.wave) {
-        state.wave = newWave;
-        enemyInterval = Math.max(0.5, 2 - (state.wave - 1) * 0.15);
-    }
-
-    // ── Enemy spawn ──
-    if (!state.gameOver) {
-        enemyTimer += dt;
-        if (enemyTimer >= enemyInterval) {
-            addEnemy();
-            enemyTimer = 0;
-        }
-    }
-
-    // ── Update projectiles ──
-    for (let i = projectiles.length - 1; i >= 0; i--) {
-        const p = projectiles[i];
-        p.mesh.position.x += p.speed;
-        if (p.mesh.position.x > 55) p.markedForDeletion = true;
-        if (p.markedForDeletion) {
-            scene.remove(p.mesh);
-            projectiles.splice(i, 1);
-        }
-    }
-
-    // ── Update enemies ──
-    for (let i = enemies.length - 1; i >= 0; i--) {
-        const e = enemies[i];
-        e.mesh.position.x -= e.speedX + state.speed * dt;
-        // wobble
-        e.mesh.rotation.y = Math.sin(state.gameTime * 2 + i) * 0.15;
-        e.mesh.position.y += Math.sin(state.gameTime * 1.5 + i * 2) * 0.01;
-
-        // drone ring spin
-        if (e.type === 'drone' && e.mesh.userData.ring) {
-            e.mesh.userData.ring.rotation.z += 0.1;
-            e.mesh.userData.ring.rotation.x += 0.05;
-        }
-
-        // off-screen
-        if (e.mesh.position.x < -55) e.markedForDeletion = true;
-
-        // collision with player
-        if (!e.markedForDeletion && checkCollision(playerBB, e)) {
-            e.markedForDeletion = true;
-            spawnExplosion(e.mesh.position.x, e.mesh.position.y, e.mesh.position.z);
-            spawnDebris(e.mesh.position.x, e.mesh.position.y, e.mesh.position.z, 8);
-            if (e.type === 'lucky') {
-                playerData.powerUp = true;
-                playerData.powerUpTimer = 0;
-                state.ammo = MAX_AMMO;
-            } else if (!state.gameOver) {
-                state.score--;
-                triggerShake(0.8, 0.3);
-                spawnFloatingText(-1, playerObj.position.x + 3, playerObj.position.y + 2, 0);
+        update() {
+            this.angle += this.va;
+            this.speedY += this.gravity;
+            this.x -= this.speedX + this.game.speed;
+            this.y += this.speedY;
+            if (this.y > this.game.height + this.size || this.x < 0 - this.size)
+                this.markedForDeletion = true;
+            if (this.y > this.game.height - this.bottomBounceBoundary && this.bounced < 5) {
+                this.bounced++;
+                this.speedY *= -0.7;
             }
         }
+        draw(context) {
+            context.save();
+            context.translate(this.x, this.y);
+            context.rotate(this.angle);
+            context.drawImage(
+                this.image,
+                this.frameX * this.spriteSize,
+                this.frameY * this.spriteSize,
+                this.spriteSize,
+                this.spriteSize,
+                this.size * -0.5,
+                this.size * -0.5,
+                this.size,
+                this.size
+            );
+            context.restore();
+        }
+    }
 
-        // collision with projectiles
-        for (let j = projectiles.length - 1; j >= 0; j--) {
-            const p = projectiles[j];
-            if (!e.markedForDeletion && !p.markedForDeletion && checkCollision(p, e)) {
-                e.lives--;
-                p.markedForDeletion = true;
-                scene.remove(p.mesh);
-                projectiles.splice(j, 1);
-                spawnDebris(e.mesh.position.x, e.mesh.position.y, e.mesh.position.z, 1);
+    // ── Floating Combat Text ──
+    class FloatingText {
+        constructor(text, x, y, color = '#00ffc8') {
+            this.text = text;
+            this.x = x;
+            this.y = y;
+            this.color = color;
+            this.markedForDeletion = false;
+            this.timer = 0;
+            this.lifeSpan = 1400;
+            this.speedY = -1.2;
+            this.opacity = 1;
+        }
+        update(deltaTime) {
+            this.y += this.speedY;
+            this.timer += deltaTime;
+            if (this.timer > this.lifeSpan * 0.5) {
+                this.opacity -= 0.025;
+            }
+            if (this.timer >= this.lifeSpan) this.markedForDeletion = true;
+        }
+        draw(context) {
+            context.save();
+            context.globalAlpha = Math.max(0, this.opacity);
+            context.font = 'bold 24px Orbitron, sans-serif';
+            context.shadowColor = 'black';
+            context.shadowBlur = 8;
+            context.fillStyle = this.color;
+            context.fillText(this.text, this.x, this.y);
+            context.restore();
+        }
+    }
 
-                if (e.lives <= 0) {
-                    e.markedForDeletion = true;
-                    spawnExplosion(e.mesh.position.x, e.mesh.position.y, e.mesh.position.z);
-                    spawnDebris(e.mesh.position.x, e.mesh.position.y, e.mesh.position.z, e.score);
+    class Player {
+        constructor(game) {
+            this.game = game;
+            this.width = 120;
+            this.height = 190;
+            this.x = 20;
+            this.y = 100;
+            this.frameX = 0;
+            this.frameY = 1;
+            this.maxFrame = 37;
+            this.speedY = 0;
+            this.maxSpeed = 4;
+            this.projectiles = [];
+            this.image = document.getElementById('player');
+            this.powerUp = false;
+            this.powerUpTimer = 0;
+            this.powerUpLimit = 10000;
+        }
+        update(deltaTime) {
+            if (this.game.keys.includes('ArrowUp') || this.game.keys.includes('w')) this.speedY = -this.maxSpeed;
+            else if (this.game.keys.includes('ArrowDown') || this.game.keys.includes('s'))
+                this.speedY = this.maxSpeed;
+            else this.speedY = 0;
 
-                    if (e.type === 'hive') {
-                        for (let k = 0; k < 5; k++) {
-                            spawnDrone(
-                                e.mesh.position.x + (Math.random() - 0.5) * 8,
-                                e.mesh.position.y + (Math.random() - 0.5) * 4
-                            );
-                        }
-                    }
+            this.y += this.speedY;
 
-                    if (!state.gameOver) {
-                        state.score += e.score;
-                        spawnFloatingText(e.score, e.mesh.position.x, e.mesh.position.y + 2, e.mesh.position.z);
+            // vertical boundaries
+            if (this.y > this.game.height - this.height * 0.5)
+                this.y = this.game.height - this.height * 0.5;
+            else if (this.y < -this.height * 0.5) this.y = -this.height * 0.5;
 
-                        if (state.score >= WINNING_SCORE) {
-                            state.gameOver = true;
-                            showGameOver();
-                        }
-                    }
+            // handle projectiles
+            this.projectiles.forEach(projectile => {
+                projectile.update();
+            });
+            this.projectiles = this.projectiles.filter(
+                projectile => !projectile.markedForDeletion
+            );
+
+            // sprite animation
+            if (this.frameX < this.maxFrame) {
+                this.frameX++;
+            } else {
+                this.frameX = 0;
+            }
+
+            // power up
+            if (this.powerUp) {
+                if (this.powerUpTimer > this.powerUpLimit) {
+                    this.powerUp = false;
+                    this.powerUpTimer = 0;
+                    this.frameY = 1; // reset to normal frame Y
+                } else {
+                    this.powerUpTimer += deltaTime;
+                    this.frameY = 1;
+                    this.game.ammo += 0.15;
                 }
             }
         }
-
-        if (e.markedForDeletion) {
-            scene.remove(e.mesh);
-            enemies.splice(i, 1);
+        draw(context) {
+            if (this.game.debug)
+                context.strokeRect(this.x, this.y, this.width, this.height);
+            this.projectiles.forEach(projectile => {
+                projectile.draw(context);
+            });
+            context.drawImage(
+                this.image,
+                this.frameX * this.width,
+                this.frameY * this.height,
+                this.width,
+                this.height,
+                this.x,
+                this.y,
+                this.width,
+                this.height
+            );
         }
-    }
-
-    // ── Update particles ──
-    for (let i = particles.length - 1; i >= 0; i--) {
-        const p = particles[i];
-        p.age += dt;
-        if (p.age > p.life) p.markedForDeletion = true;
-        p.mesh.position.x += p.vx;
-        p.vy += p.gravity;
-        p.mesh.position.y += p.vy;
-        p.mesh.position.z += p.vz;
-        p.mesh.rotation.x += p.rotSpeed.x;
-        p.mesh.rotation.y += p.rotSpeed.y;
-        p.mesh.rotation.z += p.rotSpeed.z;
-        if (p.markedForDeletion) {
-            scene.remove(p.mesh);
-            particles.splice(i, 1);
-        }
-    }
-
-    // ── Update explosions ──
-    for (let i = explosions.length - 1; i >= 0; i--) {
-        const e = explosions[i];
-        e.age += dt;
-        if (e.age > e.life) e.markedForDeletion = true;
-        e.mesh.position.x += e.vx;
-        e.mesh.position.y += e.vy;
-        e.mesh.position.z += e.vz;
-        const s = 1 + e.age * 3;
-        e.mesh.scale.set(s, s, s);
-        e.mesh.material.opacity = Math.max(0, 1 - e.age / e.life);
-        if (e.markedForDeletion) {
-            scene.remove(e.mesh);
-            explosions.splice(i, 1);
-        }
-    }
-
-    // ── Update floating texts ──
-    for (let i = floatingTexts.length - 1; i >= 0; i--) {
-        const f = floatingTexts[i];
-        f.age += dt;
-        f.sprite.position.y += f.vy;
-        f.sprite.material.opacity = Math.max(0, 1 - f.age / f.life);
-        if (f.age > f.life) {
-            scene.remove(f.sprite);
-            f.sprite.material.map.dispose();
-            f.sprite.material.dispose();
-            floatingTexts.splice(i, 1);
-        }
-    }
-
-    // ── Bubbles ──
-    bubbles.forEach(b => {
-        b.position.y += b.userData.speedY * dt;
-        b.userData.wobble += dt * 2;
-        b.position.x += Math.sin(b.userData.wobble) * 0.01;
-        if (b.position.y > 22) {
-            b.position.y = -20;
-            b.position.x = (Math.random() - 0.5) * 100;
-        }
-    });
-
-    // ── Caustic light motion ──
-    causticLight.position.x = Math.sin(state.gameTime * 0.5) * 30;
-    causticLight.position.z = Math.cos(state.gameTime * 0.3) * 15;
-    causticLight.intensity = 0.4 + Math.sin(state.gameTime * 2) * 0.2;
-
-    // ── Camera shake ──
-    if (state.shakeTimer > 0) {
-        state.shakeTimer -= dt;
-        const i = state.shakeIntensity * (state.shakeTimer / 0.3);
-        camera.position.set(
-            state.camBasePos.x + (Math.random() - 0.5) * i * 2,
-            state.camBasePos.y + (Math.random() - 0.5) * i * 2,
-            state.camBasePos.z
-        );
-    } else {
-        camera.position.lerp(state.camBasePos, 0.1);
-    }
-
-    // ── Debug wireframe toggle ──
-    if (state.debug) {
-        scene.traverse(child => {
-            if (child.isMesh && child.material) {
-                child.material.wireframe = true;
+        shootTop() {
+            if (this.game.ammo > 0 && !this.game.gameOver) {
+                this.projectiles.push(
+                    new Projectile(this.game, this.x + 80, this.y + 30)
+                );
+                this.game.ammo--;
             }
-        });
-    } else {
-        scene.traverse(child => {
-            if (child.isMesh && child.material) {
-                child.material.wireframe = false;
+            if (this.powerUp) this.shootBottom();
+        }
+        shootBottom() {
+            if (this.game.ammo > 0 && !this.game.gameOver) {
+                this.projectiles.push(
+                    new Projectile(this.game, this.x + 80, this.y + 175)
+                );
+                this.game.ammo--;
             }
-        });
+        }
+        enterPowerUp() {
+            this.powerUp = true;
+            this.powerUpTimer = 0;
+            if (this.game.ammo < this.game.maxAmmo) this.game.ammo = this.game.maxAmmo;
+        }
     }
 
-    // ── HUD ──
-    updateHUD();
+    class Enemy {
+        constructor(game) {
+            this.game = game;
+            this.x = this.game.width;
+            this.speedX = Math.random() * -1.5 - 0.8;
+            this.markedForDeletion = false;
+            this.frameX = 0;
+            this.frameY = 0;
+            this.maxFrame = 37;
+            this.escapeDamage = 15; // Damage dealt to player/base when fish escapes
+        }
+        update() {
+            this.x += this.speedX - this.game.speed;
+            
+            // Check if fish escaped past left screen edge
+            if (this.x + this.width < 0) {
+                this.markedForDeletion = true;
+                this.onEscape();
+            }
 
-    // ── Render ──
-    renderer.render(scene, camera);
-}
+            // sprite animation
+            if (this.frameX < this.maxFrame) {
+                this.frameX++;
+            } else {
+                this.frameX = 0;
+            }
+        }
+        onEscape() {
+            if (this.type === 'lucky') {
+                // Lucky fish escapes peacefully without penalty
+                return;
+            }
+            // Penalty for letting enemies breach defense line!
+            this.game.escapedCount++;
+            this.game.health = Math.max(0, this.game.health - this.escapeDamage);
+            this.game.triggerShake(8, 250);
+            this.game.floatingTexts.push(
+                new FloatingText(`ESCAPED! -${this.escapeDamage} HP`, 15, Math.max(40, this.y + 30), '#ff3344')
+            );
+            if (this.game.health <= 0 && !this.game.gameOver) {
+                this.game.gameOverReason = 'DEFENSE BREACHED! TOO MANY FISH ESCAPED!';
+                this.game.gameOver = true;
+            }
+        }
+        draw(context) {
+            if (this.game.debug)
+                context.strokeRect(this.x, this.y, this.width, this.height);
+            context.drawImage(
+                this.image,
+                this.frameX * this.width,
+                this.frameY * this.height,
+                this.width,
+                this.height,
+                this.x,
+                this.y,
+                this.width,
+                this.height
+            );
+            if (this.game.debug) {
+                context.font = '20px Helvetica';
+                context.fillStyle = 'yellow';
+                context.fillText(this.lives, this.x, this.y);
+            }
+        }
+    }
 
-animate();
+    class Angler1 extends Enemy {
+        constructor(game) {
+            super(game);
+            this.width = 228;
+            this.height = 169;
+            this.y = Math.random() * (this.game.height * 0.95 - this.height);
+            this.image = document.getElementById('angler1');
+            this.frameY = Math.floor(Math.random() * 3);
+            this.lives = 5;
+            this.score = this.lives;
+            this.escapeDamage = 15;
+        }
+    }
+
+    class Angler2 extends Enemy {
+        constructor(game) {
+            super(game);
+            this.width = 213;
+            this.height = 165;
+            this.y = Math.random() * (this.game.height * 0.95 - this.height);
+            this.image = document.getElementById('angler2');
+            this.frameY = Math.floor(Math.random() * 2);
+            this.lives = 6;
+            this.score = this.lives;
+            this.escapeDamage = 15;
+        }
+    }
+
+    class LuckyFish extends Enemy {
+        constructor(game) {
+            super(game);
+            this.width = 99;
+            this.height = 95;
+            this.y = Math.random() * (this.game.height * 0.95 - this.height);
+            this.image = document.getElementById('lucky');
+            this.frameY = Math.floor(Math.random() * 2);
+            this.lives = 5;
+            this.score = 15;
+            this.type = 'lucky';
+            this.escapeDamage = 0;
+        }
+    }
+
+    class HiveWhale extends Enemy {
+        constructor(game) {
+            super(game);
+            this.width = 400;
+            this.height = 227;
+            this.y = Math.random() * (this.game.height * 0.9 - this.height);
+            this.image = document.getElementById('hivewhale');
+            this.frameY = 0;
+            this.lives = 20;
+            this.score = this.lives;
+            this.type = 'hive';
+            this.speedX = Math.random() * -1.2 - 0.3;
+            this.escapeDamage = 35; // Heavy penalty if big whale breaches!
+        }
+    }
+
+    class Drone extends Enemy {
+        constructor(game, x, y) {
+            super(game);
+            this.width = 115;
+            this.height = 95;
+            this.x = x;
+            this.y = y;
+            this.image = document.getElementById('drone');
+            this.frameY = Math.floor(Math.random() * 2);
+            this.lives = 3;
+            this.score = this.lives;
+            this.type = 'drone';
+            this.speedX = Math.random() * -4.2 - 0.5;
+            this.escapeDamage = 10;
+        }
+    }
+
+    class Layer {
+        constructor(game, image, speedModifier) {
+            this.game = game;
+            this.image = image;
+            this.speedModifier = speedModifier;
+            this.width = 1768;
+            this.height = 500;
+            this.x = 0;
+            this.y = 0;
+        }
+        update() {
+            if (this.x <= -this.width) this.x = 0;
+            this.x -= this.game.speed * this.speedModifier;
+        }
+        draw(context) {
+            context.drawImage(this.image, this.x, this.y, this.width, this.height);
+            context.drawImage(
+                this.image,
+                this.x + this.width,
+                this.y,
+                this.width,
+                this.height
+            );
+        }
+    }
+
+    class Background {
+        constructor(game) {
+            this.game = game;
+            this.image1 = document.getElementById('layer1');
+            this.image2 = document.getElementById('layer2');
+            this.image3 = document.getElementById('layer3');
+            this.image4 = document.getElementById('layer4');
+            this.layer1 = new Layer(this.game, this.image1, 0.2);
+            this.layer2 = new Layer(this.game, this.image2, 0.4);
+            this.layer3 = new Layer(this.game, this.image3, 1);
+            this.layer4 = new Layer(this.game, this.image4, 1.5);
+            this.layers = [this.layer1, this.layer2, this.layer3];
+        }
+        update() {
+            this.layers.forEach(layer => layer.update());
+            this.layer4.update();
+        }
+        draw(context) {
+            this.layers.forEach(layer => layer.draw(context));
+        }
+    }
+
+    class Explosion {
+        constructor(game, x, y) {
+            this.game = game;
+            this.frameX = 0;
+            this.frameY = 0;
+            this.spriteWidth = 200;
+            this.spriteHeight = 200;
+            this.width = this.spriteWidth;
+            this.height = this.spriteHeight;
+            this.x = x - this.width * 0.5;
+            this.y = y - this.height * 0.5;
+            this.fps = 30;
+            this.timer = 0;
+            this.interval = 1000 / this.fps;
+            this.markedForDeletion = false;
+            this.maxFrame = 8;
+        }
+        update(deltaTime) {
+            this.x -= this.game.speed;
+            if (this.timer > this.interval) {
+                this.frameX++;
+                this.timer = 0;
+            } else {
+                this.timer += deltaTime;
+            }
+            if (this.frameX > this.maxFrame) this.markedForDeletion = true;
+        }
+        draw(context) {
+            context.drawImage(
+                this.image,
+                this.frameX * this.spriteWidth,
+                this.frameY * this.spriteHeight,
+                this.spriteWidth,
+                this.spriteHeight,
+                this.x,
+                this.y,
+                this.width,
+                this.height
+            );
+        }
+    }
+
+    class SmokeExplosion extends Explosion {
+        constructor(game, x, y) {
+            super(game, x, y);
+            this.image = document.getElementById('smokeExplosion');
+        }
+    }
+
+    class FireExplosion extends Explosion {
+        constructor(game, x, y) {
+            super(game, x, y);
+            this.image = document.getElementById('fireExplosion');
+        }
+    }
+
+    // ── Enhanced HUD Panel ──
+    class UI {
+        constructor(game) {
+            this.game = game;
+            this.fontSize = 24;
+            this.fontFamily = 'Bangers';
+            this.accentFont = 'Orbitron';
+            this.color = 'white';
+            this.gameOverAlpha = 0;
+            this.gameOverPulse = 0;
+        }
+        draw(context) {
+            context.save();
+
+            // ── HUD Panel Backdrop ──
+            const panelGrad = context.createLinearGradient(0, 0, 480, 115);
+            panelGrad.addColorStop(0, 'rgba(0, 12, 35, 0.75)');
+            panelGrad.addColorStop(1, 'rgba(0, 12, 35, 0.2)');
+            context.fillStyle = panelGrad;
+            context.beginPath();
+            context.roundRect(12, 10, 460, 105, 10);
+            context.fill();
+            context.strokeStyle = 'rgba(80, 200, 255, 0.4)';
+            context.lineWidth = 1.5;
+            context.stroke();
+
+            // ── Score ──
+            context.font = '12px ' + this.accentFont;
+            context.fillStyle = 'rgba(180, 220, 255, 0.75)';
+            context.fillText('SCORE', 24, 30);
+            context.font = 'bold 28px ' + this.accentFont;
+            context.fillStyle = '#ffffff';
+            context.fillText(Math.floor(this.game.score), 24, 58);
+
+            // ── Wave ──
+            context.font = '12px ' + this.accentFont;
+            context.fillStyle = 'rgba(180, 220, 255, 0.75)';
+            context.fillText('WAVE', 140, 30);
+            context.font = 'bold 24px ' + this.accentFont;
+            context.fillStyle = '#6ee7ff';
+            context.fillText(this.game.wave, 140, 56);
+
+            // ── Health / Base Shield Bar ──
+            context.font = '12px ' + this.accentFont;
+            context.fillStyle = 'rgba(180, 220, 255, 0.75)';
+            context.fillText('HEALTH / SHIELD', 240, 30);
+
+            const hpBarWidth = 210;
+            const hpBarHeight = 12;
+            const hpX = 240;
+            const hpY = 40;
+            const hpRatio = Math.max(0, this.game.health / this.game.maxHealth);
+
+            // HP bar bg
+            context.fillStyle = 'rgba(255, 255, 255, 0.1)';
+            context.beginPath();
+            context.roundRect(hpX, hpY, hpBarWidth, hpBarHeight, 5);
+            context.fill();
+
+            // HP bar fill
+            if (hpRatio > 0) {
+                const hpGrad = context.createLinearGradient(hpX, 0, hpX + hpBarWidth * hpRatio, 0);
+                if (hpRatio > 0.5) {
+                    hpGrad.addColorStop(0, '#00ffaa');
+                    hpGrad.addColorStop(1, '#00cc66');
+                } else if (hpRatio > 0.25) {
+                    hpGrad.addColorStop(0, '#ffbb00');
+                    hpGrad.addColorStop(1, '#ff8800');
+                } else {
+                    hpGrad.addColorStop(0, '#ff3344');
+                    hpGrad.addColorStop(1, '#cc0022');
+                }
+                context.fillStyle = hpGrad;
+                context.beginPath();
+                context.roundRect(hpX, hpY, hpBarWidth * hpRatio, hpBarHeight, 5);
+                context.fill();
+            }
+            context.font = '11px ' + this.accentFont;
+            context.fillStyle = '#ffffff';
+            context.fillText(`${Math.ceil(this.game.health)}%`, hpX + hpBarWidth - 35, hpY - 3);
+
+            // ── Ammo Bar ──
+            context.font = '12px ' + this.accentFont;
+            context.fillStyle = 'rgba(180, 220, 255, 0.75)';
+            context.fillText('AMMO', 24, 80);
+
+            const ammoBarWidth = 200;
+            const ammoBarHeight = 10;
+            const ammoX = 24;
+            const ammoY = 88;
+            const ammoRatio = Math.min(this.game.ammo / this.game.maxAmmo, 1);
+
+            context.fillStyle = 'rgba(255, 255, 255, 0.1)';
+            context.beginPath();
+            context.roundRect(ammoX, ammoY, ammoBarWidth, ammoBarHeight, 5);
+            context.fill();
+
+            if (ammoRatio > 0) {
+                const ammoGrad = context.createLinearGradient(ammoX, 0, ammoX + ammoBarWidth * ammoRatio, 0);
+                if (this.game.player.powerUp) {
+                    ammoGrad.addColorStop(0, '#ffdd00');
+                    ammoGrad.addColorStop(1, '#ff8800');
+                } else {
+                    ammoGrad.addColorStop(0, '#00c8ff');
+                    ammoGrad.addColorStop(1, '#0066ff');
+                }
+                context.fillStyle = ammoGrad;
+                context.beginPath();
+                context.roundRect(ammoX, ammoY, ammoBarWidth * ammoRatio, ammoBarHeight, 5);
+                context.fill();
+            }
+
+            // ── Escaped Counter ──
+            context.font = '12px ' + this.accentFont;
+            context.fillStyle = 'rgba(255, 120, 120, 0.85)';
+            context.fillText(`ESCAPED: ${this.game.escapedCount}`, 240, 96);
+
+            // ── Timer Bar (bottom of screen) ──
+            const timeRatio = Math.max(0, 1 - this.game.gameTime / this.game.timeLimit);
+            const timerWidth = this.game.width - 40;
+            const timerHeight = 8;
+            const timerX = 20;
+            const timerY = this.game.height - 18;
+
+            context.fillStyle = 'rgba(255, 255, 255, 0.08)';
+            context.beginPath();
+            context.roundRect(timerX, timerY, timerWidth, timerHeight, 4);
+            context.fill();
+
+            if (timeRatio > 0) {
+                const timerGrad = context.createLinearGradient(timerX, 0, timerX + timerWidth * timeRatio, 0);
+                if (timeRatio > 0.3) {
+                    timerGrad.addColorStop(0, '#00ffa0');
+                    timerGrad.addColorStop(1, '#00cc88');
+                } else {
+                    timerGrad.addColorStop(0, '#ff4444');
+                    timerGrad.addColorStop(1, '#ff8800');
+                }
+                context.fillStyle = timerGrad;
+                context.beginPath();
+                context.roundRect(timerX, timerY, timerWidth * timeRatio, timerHeight, 4);
+                context.fill();
+            }
+
+            const timeLeft = Math.max(0, (this.game.timeLimit - this.game.gameTime) * 0.001).toFixed(1);
+            context.font = '13px ' + this.accentFont;
+            context.fillStyle = timeRatio > 0.3 ? 'rgba(200, 255, 230, 0.8)' : 'rgba(255, 150, 130, 0.9)';
+            context.textAlign = 'right';
+            context.fillText(timeLeft + 's', timerX + timerWidth, timerY - 4);
+            context.textAlign = 'left';
+
+            // ── Game Over Screen ──
+            if (this.game.gameOver) {
+                this.gameOverAlpha = Math.min(1, this.gameOverAlpha + 0.03);
+                this.gameOverPulse += 0.05;
+
+                context.save();
+                context.globalAlpha = this.gameOverAlpha;
+
+                // Dark blurred backdrop overlay
+                context.fillStyle = 'rgba(0, 8, 24, 0.82)';
+                context.fillRect(0, 0, this.game.width, this.game.height);
+
+                context.textAlign = 'center';
+
+                const won = this.game.score >= this.game.winningScore || (this.game.gameTime >= this.game.timeLimit && this.game.health > 0);
+
+                context.shadowColor = won ? 'rgba(0, 255, 180, 0.8)' : 'rgba(255, 60, 60, 0.8)';
+                context.shadowBlur = 25 + Math.sin(this.gameOverPulse) * 10;
+                context.font = '75px ' + this.fontFamily;
+                context.fillStyle = won ? '#00ffc8' : '#ff5555';
+                const titleText = won ? 'VICTORY — SECTOR SECURED!' : 'DEFEAT — MISSION FAILED!';
+                context.fillText(titleText, this.game.width * 0.5, this.game.height * 0.5 - 55);
+
+                context.shadowBlur = 0;
+                context.font = '22px ' + this.accentFont;
+                context.fillStyle = 'rgba(210, 230, 255, 0.9)';
+                const subText = won
+                    ? `Great job commander! Escaped fish: ${this.game.escapedCount}`
+                    : (this.game.gameOverReason || 'Submarine destroyed! Too many enemies breached your sector!');
+                context.fillText(subText, this.game.width * 0.5, this.game.height * 0.5 + 5);
+
+                // Stats breakdown
+                context.font = 'bold 18px ' + this.accentFont;
+                context.fillStyle = 'rgba(160, 210, 255, 0.8)';
+                context.fillText(
+                    `Final Score: ${Math.floor(this.game.score)}   |   Health Left: ${Math.ceil(this.game.health)}%   |   Wave Reached: ${this.game.wave}`,
+                    this.game.width * 0.5,
+                    this.game.height * 0.5 + 50
+                );
+
+                // Restart prompt
+                const restartAlpha = 0.5 + Math.sin(this.gameOverPulse * 2) * 0.4;
+                context.globalAlpha = this.gameOverAlpha * restartAlpha;
+                context.font = '18px ' + this.accentFont;
+                context.fillStyle = '#ffffff';
+                context.fillText(
+                    '[ Press ENTER to Try Again ]',
+                    this.game.width * 0.5,
+                    this.game.height * 0.5 + 105
+                );
+
+                context.restore();
+            }
+
+            context.restore();
+        }
+    }
+
+    class Game {
+        constructor(width, height) {
+            this.width = width;
+            this.height = height;
+            this.background = new Background(this);
+            this.ui = new UI(this);
+            this.keys = [];
+            this.enemies = [];
+            this.particles = [];
+            this.explosions = [];
+            this.floatingTexts = [];
+            this.enemyTimer = 0;
+            this.enemyInterval = 1800;
+            this.ammo = 20;
+            this.maxAmmo = 50;
+            this.ammoTimer = 0;
+            this.ammoInterval = 320;
+            this.player = new Player(this);
+            this.input = new InputHandler(this);
+            this.gameOver = false;
+            this.gameOverReason = '';
+            this.score = 0;
+            this.winningScore = 100;
+            this.health = 100;
+            this.maxHealth = 100;
+            this.escapedCount = 0;
+            this.gameTime = 0;
+            this.timeLimit = 35000; // 35s wave limit
+            this.speed = 1;
+            this.debug = false;
+            this.maxParticles = 200;
+            this.wave = 1;
+            this.waveThreshold = 30;
+            // Screen shake
+            this.shakeIntensity = 0;
+            this.shakeTimer = 0;
+        }
+        update(deltaTime) {
+            if (!this.gameOver) this.gameTime += deltaTime;
+            
+            // Win condition: time expired with health remaining OR reached target score
+            if (this.gameTime >= this.timeLimit && !this.gameOver) {
+                if (this.health > 0) {
+                    this.gameOver = true;
+                } else {
+                    this.gameOverReason = 'TIME EXPIRED WITH DEFENSE BREACHED!';
+                    this.gameOver = true;
+                }
+            }
+
+            this.background.update();
+            this.player.update(deltaTime);
+
+            // Wave progression
+            const newWave = Math.floor(this.score / this.waveThreshold) + 1;
+            if (newWave > this.wave) {
+                this.wave = newWave;
+                this.enemyInterval = Math.max(550, 1800 - (this.wave - 1) * 160);
+                this.floatingTexts.push(
+                    new FloatingText(`WAVE ${this.wave} STARTED!`, this.width * 0.45, 200, '#6ee7ff')
+                );
+            }
+
+            // Ammo regeneration
+            if (this.ammoTimer > this.ammoInterval) {
+                if (this.ammo < this.maxAmmo) this.ammo++;
+                this.ammoTimer = 0;
+            } else {
+                this.ammoTimer += deltaTime;
+            }
+
+            // Particles (capped)
+            this.particles.forEach(particle => particle.update());
+            this.particles = this.particles.filter(
+                particle => !particle.markedForDeletion
+            );
+            if (this.particles.length > this.maxParticles) {
+                this.particles.length = this.maxParticles;
+            }
+
+            this.explosions.forEach(explosion => explosion.update(deltaTime));
+            this.explosions = this.explosions.filter(
+                explosion => !explosion.markedForDeletion
+            );
+
+            // Floating combat texts
+            this.floatingTexts.forEach(ft => ft.update(deltaTime));
+            this.floatingTexts = this.floatingTexts.filter(ft => !ft.markedForDeletion);
+
+            // Screen shake timer
+            if (this.shakeTimer > 0) {
+                this.shakeTimer -= deltaTime;
+                if (this.shakeTimer <= 0) {
+                    this.shakeIntensity = 0;
+                    this.shakeTimer = 0;
+                }
+            }
+
+            // Enemies & Collisions
+            this.enemies.forEach(enemy => {
+                enemy.update();
+
+                // Player Direct Collision
+                if (this.checkCollision(this.player, enemy)) {
+                    enemy.markedForDeletion = true;
+                    this.addExplosion(enemy);
+                    for (let i = 0; i < 8; i++) {
+                        this.particles.push(
+                            new Particle(
+                                this,
+                                enemy.x + enemy.width * 0.5,
+                                enemy.y + enemy.height * 0.5
+                            )
+                        );
+                    }
+                    if (enemy.type === 'lucky') {
+                        this.player.enterPowerUp();
+                        this.health = Math.min(this.maxHealth, this.health + 25);
+                        this.floatingTexts.push(
+                            new FloatingText('+25 HP REPAIR!', this.player.x + 100, this.player.y, '#00ffc8')
+                        );
+                    } else if (!this.gameOver) {
+                        const directDamage = 20;
+                        this.health = Math.max(0, this.health - directDamage);
+                        this.score = Math.max(0, this.score - 1);
+                        this.triggerShake(10, 300);
+                        this.floatingTexts.push(
+                            new FloatingText(`-${directDamage} HP`, this.player.x + 100, this.player.y, '#ff3344')
+                        );
+                        if (this.health <= 0) {
+                            this.gameOverReason = 'SUBMARINE DESTROYED IN COMBAT!';
+                            this.gameOver = true;
+                        }
+                    }
+                }
+
+                // Projectiles vs Enemies Collision
+                this.player.projectiles.forEach(projectile => {
+                    if (this.checkCollision(projectile, enemy)) {
+                        enemy.lives--;
+                        projectile.markedForDeletion = true;
+                        this.particles.push(
+                            new Particle(
+                                this,
+                                enemy.x + enemy.width * 0.5,
+                                enemy.y + enemy.height * 0.5
+                            )
+                        );
+                        if (enemy.lives <= 0) {
+                            for (let i = 0; i < enemy.score; i++) {
+                                this.particles.push(
+                                    new Particle(
+                                        this,
+                                        enemy.x + enemy.width * 0.5,
+                                        enemy.y + enemy.height * 0.5
+                                    )
+                                );
+                            }
+                            enemy.markedForDeletion = true;
+                            this.addExplosion(enemy);
+                            if (enemy.type === 'hive') {
+                                for (let i = 0; i < 5; i++) {
+                                    this.enemies.push(
+                                        new Drone(
+                                            this,
+                                            enemy.x + Math.random() * enemy.width,
+                                            enemy.y + Math.random() * enemy.height * 0.5
+                                        )
+                                    );
+                                }
+                            }
+
+                            if (!this.gameOver) {
+                                this.score += enemy.score;
+                                this.floatingTexts.push(
+                                    new FloatingText(
+                                        `+${enemy.score}`,
+                                        enemy.x + enemy.width * 0.4,
+                                        enemy.y,
+                                        '#00ffc8'
+                                    )
+                                );
+                            }
+                            if (this.score >= this.winningScore && !this.gameOver) {
+                                this.gameOver = true;
+                            }
+                        }
+                    }
+                });
+            });
+
+            this.enemies = this.enemies.filter(enemy => !enemy.markedForDeletion);
+
+            // Enemy Spawning
+            if (this.enemyTimer > this.enemyInterval && !this.gameOver) {
+                this.addEnemy();
+                this.enemyTimer = 0;
+            } else {
+                this.enemyTimer += deltaTime;
+            }
+        }
+        draw(context) {
+            context.save();
+            
+            // Screen shake translation
+            if (this.shakeTimer > 0) {
+                const dx = (Math.random() - 0.5) * this.shakeIntensity * 2;
+                const dy = (Math.random() - 0.5) * this.shakeIntensity * 2;
+                context.translate(dx, dy);
+            }
+
+            this.background.draw(context);
+            this.player.draw(context);
+            this.particles.forEach(particle => particle.draw(context));
+            this.enemies.forEach(enemy => enemy.draw(context));
+            this.explosions.forEach(explosion => explosion.draw(context));
+            this.floatingTexts.forEach(ft => ft.draw(context));
+            
+            // Foreground decoration layer
+            this.background.layer4.draw(context);
+            this.ui.draw(context);
+
+            context.restore();
+        }
+        addEnemy() {
+            const randomize = Math.random();
+            if (randomize < 0.45) this.enemies.push(new Angler1(this));
+            else if (randomize < 0.70) this.enemies.push(new Angler2(this));
+            else if (randomize < 0.82) this.enemies.push(new HiveWhale(this));
+            else this.enemies.push(new LuckyFish(this));
+        }
+        addExplosion(enemy) {
+            const randomize = Math.random();
+            if (randomize < 0.5) {
+                this.explosions.push(
+                    new SmokeExplosion(
+                        this,
+                        enemy.x + enemy.width * 0.5,
+                        enemy.y + enemy.height * 0.5
+                    )
+                );
+            } else {
+                this.explosions.push(
+                    new FireExplosion(
+                        this,
+                        enemy.x + enemy.width * 0.5,
+                        enemy.y + enemy.height * 0.5
+                    )
+                );
+            }
+        }
+        checkCollision(rect1, rect2) {
+            return (
+                rect1.x < rect2.x + rect2.width &&
+                rect1.x + rect1.width > rect2.x &&
+                rect1.y < rect2.y + rect2.height &&
+                rect1.y + rect1.height > rect2.y
+            );
+        }
+        triggerShake(intensity, duration) {
+            this.shakeIntensity = intensity;
+            this.shakeTimer = duration;
+        }
+        restart() {
+            this.enemies = [];
+            this.particles = [];
+            this.explosions = [];
+            this.floatingTexts = [];
+            this.player.projectiles = [];
+            this.player.x = 20;
+            this.player.y = 100;
+            this.player.powerUp = false;
+            this.player.powerUpTimer = 0;
+            this.player.frameY = 1;
+            this.ammo = 20;
+            this.ammoTimer = 0;
+            this.enemyTimer = 0;
+            this.enemyInterval = 1800;
+            this.gameOver = false;
+            this.gameOverReason = '';
+            this.score = 0;
+            this.health = 100;
+            this.escapedCount = 0;
+            this.gameTime = 0;
+            this.wave = 1;
+            this.shakeIntensity = 0;
+            this.shakeTimer = 0;
+            this.ui.gameOverAlpha = 0;
+            this.ui.gameOverPulse = 0;
+        }
+    }
+
+    const game = new Game(canvas.width, canvas.height);
+    let lastTime = 0;
+
+    function animate(timeStamp) {
+        const deltaTime = timeStamp - lastTime;
+        lastTime = timeStamp;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        game.update(deltaTime);
+        game.draw(ctx);
+        requestAnimationFrame(animate);
+    }
+    animate(0);
+});

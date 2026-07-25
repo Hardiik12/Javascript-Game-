@@ -5,240 +5,95 @@
     box-sizing: border-box;
 }
 
-/* ── Body ── */
+/* ── Body — premium dark ocean gradient ── */
 body {
-    width: 100vw;
-    height: 100vh;
-    overflow: hidden;
-    background: #020810;
-    font-family: 'Orbitron', sans-serif;
-    cursor: crosshair;
-}
-
-/* ── Three.js Canvas ── */
-#game-container {
-    width: 100%;
-    height: 100%;
-    position: fixed;
-    inset: 0;
-    z-index: 0;
-}
-#game-container canvas {
-    display: block;
-    width: 100% !important;
-    height: 100% !important;
-}
-
-/* ── HUD Overlay ── */
-#hud {
-    position: fixed;
-    inset: 0;
-    pointer-events: none;
-    z-index: 10;
-}
-
-#hud-panel {
-    position: absolute;
-    top: 20px;
-    left: 20px;
-    background: rgba(0, 12, 35, 0.6);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(80, 180, 255, 0.2);
-    border-radius: 12px;
-    padding: 16px 22px;
-    min-width: 240px;
-}
-
-.hud-row {
-    display: flex;
-    gap: 40px;
-    margin-bottom: 14px;
-}
-
-.hud-stat {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-}
-
-.hud-label {
-    font-size: 10px;
-    font-weight: 400;
-    color: rgba(140, 190, 255, 0.6);
-    letter-spacing: 2px;
-}
-
-.hud-value {
-    font-size: 28px;
-    font-weight: 900;
-    color: #ffffff;
-    text-shadow: 0 0 12px rgba(100, 180, 255, 0.4);
-    line-height: 1;
-}
-
-.hud-wave {
-    color: #6ee7ff;
-    text-shadow: 0 0 14px rgba(110, 231, 255, 0.5);
-}
-
-/* ── Bars ── */
-.hud-bar-group {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-}
-
-.hud-bar-label {
-    font-size: 9px;
-    font-weight: 400;
-    color: rgba(140, 190, 255, 0.45);
-    letter-spacing: 2px;
-}
-
-.hud-bar-bg {
-    width: 100%;
-    height: 8px;
-    background: rgba(255, 255, 255, 0.06);
-    border-radius: 4px;
-    overflow: hidden;
-}
-
-.hud-bar-fill {
-    height: 100%;
-    border-radius: 4px;
-    transition: width 0.15s ease-out;
-}
-
-/* ammo bar */
-#hud-ammo {
-    width: 40%;
-    background: linear-gradient(90deg, #00c8ff, #0066ff);
-    box-shadow: 0 0 8px rgba(0, 150, 255, 0.4);
-}
-#hud-ammo.powered-up {
-    background: linear-gradient(90deg, #ffdd00, #ff8800);
-    box-shadow: 0 0 10px rgba(255, 200, 0, 0.5);
-}
-
-/* ── Timer Bar (bottom) ── */
-#hud-timer-wrap {
-    position: absolute;
-    bottom: 16px;
-    left: 20px;
-    right: 20px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-.hud-timer-bg {
-    flex: 1;
-    height: 5px;
-}
-
-.hud-timer-fill {
-    width: 100%;
-    background: linear-gradient(90deg, #00ffa0, #00cc88);
-    box-shadow: 0 0 6px rgba(0, 255, 160, 0.4);
-    transition: width 0.25s linear;
-}
-.hud-timer-fill.danger {
-    background: linear-gradient(90deg, #ff4444, #ff8800);
-    box-shadow: 0 0 8px rgba(255, 80, 50, 0.5);
-}
-
-#hud-timer-text {
-    font-size: 11px;
-    font-weight: 700;
-    color: rgba(200, 255, 230, 0.6);
-    min-width: 48px;
-    text-align: right;
-}
-#hud-timer-text.danger {
-    color: rgba(255, 150, 130, 0.85);
-}
-
-/* ── Game Over Overlay ── */
-#game-over-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 100;
+    min-height: 100vh;
     display: flex;
     justify-content: center;
     align-items: center;
-    background: rgba(0, 5, 20, 0);
-    backdrop-filter: blur(0px);
-    -webkit-backdrop-filter: blur(0px);
-    transition: background 0.8s ease, backdrop-filter 0.8s ease, -webkit-backdrop-filter 0.8s ease;
-    pointer-events: none;
-}
-#game-over-overlay.visible {
-    background: rgba(0, 5, 20, 0.75);
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
-    pointer-events: auto;
-}
-#game-over-overlay.hidden {
-    display: none;
-}
-
-#game-over-content {
-    text-align: center;
-    transform: translateY(30px);
-    opacity: 0;
-    transition: transform 0.6s ease 0.3s, opacity 0.6s ease 0.3s;
-}
-#game-over-overlay.visible #game-over-content {
-    transform: translateY(0);
-    opacity: 1;
-}
-
-#game-over-title {
+    background: linear-gradient(135deg, #06101e 0%, #0d2b45 40%, #164064 70%, #06101e 100%);
+    background-size: 400% 400%;
+    animation: gradientShift 14s ease infinite;
+    overflow: hidden;
     font-family: 'Bangers', cursive;
-    font-size: 80px;
-    color: #ff6666;
-    text-shadow: 0 0 30px rgba(255, 60, 60, 0.6);
-    margin-bottom: 8px;
-    animation: titlePulse 2s ease-in-out infinite;
-}
-#game-over-title.won {
-    color: #00ffc8;
-    text-shadow: 0 0 30px rgba(0, 255, 180, 0.6);
 }
 
-@keyframes titlePulse {
-    0%, 100% { text-shadow: 0 0 30px rgba(255, 60, 60, 0.6); }
-    50%      { text-shadow: 0 0 50px rgba(255, 60, 60, 0.9); }
-}
-#game-over-title.won {
-    animation-name: titlePulseWon;
-}
-@keyframes titlePulseWon {
-    0%, 100% { text-shadow: 0 0 30px rgba(0, 255, 180, 0.6); }
-    50%      { text-shadow: 0 0 50px rgba(0, 255, 180, 0.9); }
+@keyframes gradientShift {
+    0%   { background-position: 0% 50%; }
+    50%  { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
 }
 
-#game-over-subtitle {
-    font-size: 20px;
-    color: rgba(200, 220, 255, 0.85);
-    margin-bottom: 16px;
+/* ── Subtle particle shimmer on body ── */
+body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+        radial-gradient(1.5px 1.5px at 10% 20%, rgba(120, 200, 255, 0.35) 50%, transparent 100%),
+        radial-gradient(1px 1px at 30% 70%, rgba(100, 220, 255, 0.3) 50%, transparent 100%),
+        radial-gradient(2px 2px at 60% 15%, rgba(140, 180, 255, 0.25) 50%, transparent 100%),
+        radial-gradient(1.5px 1.5px at 80% 60%, rgba(100, 240, 255, 0.35) 50%, transparent 100%),
+        radial-gradient(1px 1px at 45% 90%, rgba(150, 160, 255, 0.25) 50%, transparent 100%),
+        radial-gradient(1.5px 1.5px at 90% 40%, rgba(80, 220, 250, 0.3) 50%, transparent 100%);
+    pointer-events: none;
+    animation: shimmer 8s ease-in-out infinite alternate;
+    z-index: 0;
 }
 
-#game-over-score {
-    font-size: 16px;
-    font-weight: 700;
-    color: rgba(150, 200, 255, 0.7);
-    margin-bottom: 30px;
+@keyframes shimmer {
+    0%   { opacity: 0.5; }
+    100% { opacity: 1; }
 }
 
-.restart-prompt {
-    font-size: 14px;
-    color: #ffffff;
-    animation: blink 1.5s ease-in-out infinite;
+/* ── Main wrapper ── */
+main {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100vw;
+    height: 100vh;
+    padding: 10px;
 }
 
-@keyframes blink {
-    0%, 100% { opacity: 0.4; }
-    50%      { opacity: 1; }
+/* ── Canvas — glowing underwater border ── */
+#canvas1 {
+    border: 3px solid rgba(80, 200, 255, 0.6);
+    border-radius: 14px;
+    position: relative;
+    background: #1a3a5c;
+    max-width: 98vw;
+    max-height: 95vh;
+    font-family: 'Bangers', cursive;
+    box-shadow:
+        0 0 25px rgba(0, 180, 255, 0.4),
+        0 0 50px rgba(0, 120, 220, 0.25),
+        inset 0 0 35px rgba(0, 0, 0, 0.4);
+    animation: canvasPulse 4s ease-in-out infinite;
+}
+
+@keyframes canvasPulse {
+    0%, 100% {
+        box-shadow:
+            0 0 25px rgba(0, 180, 255, 0.4),
+            0 0 50px rgba(0, 120, 220, 0.25),
+            inset 0 0 35px rgba(0, 0, 0, 0.4);
+    }
+    50% {
+        box-shadow:
+            0 0 35px rgba(0, 210, 255, 0.6),
+            0 0 70px rgba(0, 150, 255, 0.35),
+            inset 0 0 35px rgba(0, 0, 0, 0.4);
+    }
+}
+
+/* ── Hidden sprite-sheet images ── */
+#layer1, #layer2, #layer3, #layer4,
+#player, #angler1, #angler2, #lucky,
+#projectile, #gears,
+#hivewhale, #drone,
+#smokeExplosion, #fireExplosion {
+    display: none;
 }
