@@ -18,13 +18,14 @@ window.addEventListener('load', function () {
                     this.game.player.shootTop();
                 } else if (e.key === 'd') {
                     this.game.debug = !this.game.debug;
+                } else if (e.key === 'Enter' && this.game.gameOver) {
+                    this.game.restart();
                 }
             });
             window.addEventListener('keyup', e => {
                 if (this.game.keys.indexOf(e.key) > -1) {
                     this.game.keys.splice(this.game.keys.indexOf(e.key), 1);
                 }
-                console.log(this.game.keys);
             });
         }
     }
@@ -100,6 +101,40 @@ window.addEventListener('load', function () {
         }
     }
 
+    // ── Floating Score Number ──
+    class FloatingText {
+        constructor(value, x, y) {
+            this.value = value;
+            this.x = x;
+            this.y = y;
+            this.markedForDeletion = false;
+            this.timer = 0;
+            this.lifeSpan = 1500;
+            this.speedY = -1.5;
+            this.opacity = 1;
+        }
+        update(deltaTime) {
+            this.y += this.speedY;
+            this.timer += deltaTime;
+            if (this.timer > this.lifeSpan * 0.5) {
+                this.opacity -= 0.02;
+            }
+            if (this.timer > this.lifeSpan) this.markedForDeletion = true;
+        }
+        draw(context) {
+            context.save();
+            context.globalAlpha = Math.max(0, this.opacity);
+            context.font = 'bold 28px Orbitron';
+            const text = (this.value > 0 ? '+' : '') + this.value;
+            // glow
+            context.shadowColor = this.value > 0 ? '#00ffaa' : '#ff4444';
+            context.shadowBlur = 12;
+            context.fillStyle = this.value > 0 ? '#00ffc8' : '#ff6666';
+            context.fillText(text, this.x, this.y);
+            context.restore();
+        }
+    }
+
     class Player {
         constructor(game) {
             this.game = game;
@@ -151,7 +186,7 @@ window.addEventListener('load', function () {
                 if (this.powerUpTimer > this.powerUpLimit) {
                     this.powerUp = false;
                     this.powerUpTimer = 0;
-                    this.frameY = 0;
+                    this.frameY = 1; // FIX: was 0, but normal state is row 1
                 } else {
                     this.powerUpTimer += deltaTime;
                     this.frameY = 1;
@@ -366,7 +401,7 @@ window.addEventListener('load', function () {
         constructor(game, x, y) {
             this.game = game;
             this.frameX = 0;
-            this.frameY = 0;          // important: initialize frameY
+            this.frameY = 0;
             this.spriteWidth = 200;
             this.spriteHeight = 200;
             this.width = this.spriteWidth;
@@ -418,56 +453,190 @@ window.addEventListener('load', function () {
         }
     }
 
+    // ── Enhanced UI ──
     class UI {
         constructor(game) {
             this.game = game;
             this.fontSize = 25;
             this.fontFamily = 'Bangers';
+            this.accentFont = 'Orbitron';
             this.color = 'white';
+            this.gameOverAlpha = 0;
+            this.gameOverPulse = 0;
         }
         draw(context) {
             context.save();
-            context.fillStyle = this.color;
-            context.shadowOffsetX = 2;
-            context.shadowOffsetY = 2;
-            context.shadowColor = 'black';
-            context.font = this.fontSize + 'px ' + this.fontFamily;
-            // score
-            context.fillText('Score: ' + this.game.score, 20, 40);
-            // timer
-            const formattedTime = (this.game.gameTime * 0.001).toFixed(1);
-            context.fillText('Timer: ' + formattedTime, 20, 100);
-            // game over message
-            if (this.game.gameOver) {
-                context.textAlign = 'center';
-                let message1;
-                let message2;
-                if (this.game.score >= this.game.winningScore) {
-                    message1 = 'Most Wondrous!';
-                    message2 = 'Well done explorer!';
-                } else {
-                    message1 = 'Blazes!';
-                    message2 = 'EM UNDHI LEY INGA PANUKO!';
-                }
-                context.font = '70px ' + this.fontFamily;
-                context.fillText(
-                    message1,
-                    this.game.width * 0.5,
-                    this.game.height * 0.5 - 40
-                );
-                context.font = '25px ' + this.fontFamily;
-                context.fillText(
-                    message2,
-                    this.game.width * 0.5,
-                    this.game.height * 0.5 + 40
-                );
-            }
-            // ammo
-            if (this.game.player.powerUp) context.fillStyle = '#ffffbd';
 
-            for (let i = 0; i < this.game.ammo; i++) {
-                context.fillRect(20 + 5 * i, 50, 3, 20);
+            // ── HUD Panel Backdrop ──
+            const panelGrad = context.createLinearGradient(0, 0, 300, 120);
+            panelGrad.addColorStop(0, 'rgba(0, 10, 30, 0.65)');
+            panelGrad.addColorStop(1, 'rgba(0, 10, 30, 0.1)');
+            context.fillStyle = panelGrad;
+            context.beginPath();
+            context.roundRect(10, 8, 280, 108, 10);
+            context.fill();
+            // subtle border
+            context.strokeStyle = 'rgba(80, 180, 255, 0.25)';
+            context.lineWidth = 1;
+            context.stroke();
+
+            // ── Score ──
+            context.fillStyle = this.color;
+            context.shadowOffsetX = 1;
+            context.shadowOffsetY = 1;
+            context.shadowColor = 'rgba(0,0,0,0.6)';
+            context.font = '14px ' + this.accentFont;
+            context.fillStyle = 'rgba(180, 210, 255, 0.7)';
+            context.fillText('SCORE', 22, 30);
+            context.font = 'bold 30px ' + this.accentFont;
+            context.fillStyle = '#ffffff';
+            context.fillText(Math.floor(this.game.score), 22, 60);
+
+            // ── Wave Counter ──
+            context.font = '14px ' + this.accentFont;
+            context.fillStyle = 'rgba(180, 210, 255, 0.7)';
+            context.fillText('WAVE', 180, 30);
+            context.font = 'bold 24px ' + this.accentFont;
+            context.fillStyle = '#6ee7ff';
+            context.fillText(this.game.wave, 180, 56);
+
+            // ── Ammo Bar ──
+            context.font = '12px ' + this.accentFont;
+            context.fillStyle = 'rgba(180, 210, 255, 0.5)';
+            context.fillText('AMMO', 22, 82);
+
+            const ammoBarWidth = 200;
+            const ammoBarHeight = 10;
+            const ammoX = 22;
+            const ammoY = 88;
+            const ammoRatio = Math.min(this.game.ammo / this.game.maxAmmo, 1);
+
+            // bar background
+            context.fillStyle = 'rgba(255, 255, 255, 0.08)';
+            context.beginPath();
+            context.roundRect(ammoX, ammoY, ammoBarWidth, ammoBarHeight, 5);
+            context.fill();
+
+            // bar fill with gradient
+            if (ammoRatio > 0) {
+                const ammoGrad = context.createLinearGradient(ammoX, 0, ammoX + ammoBarWidth * ammoRatio, 0);
+                if (this.game.player.powerUp) {
+                    ammoGrad.addColorStop(0, '#ffdd00');
+                    ammoGrad.addColorStop(1, '#ff8800');
+                } else {
+                    ammoGrad.addColorStop(0, '#00c8ff');
+                    ammoGrad.addColorStop(1, '#0066ff');
+                }
+                context.fillStyle = ammoGrad;
+                context.beginPath();
+                context.roundRect(ammoX, ammoY, ammoBarWidth * ammoRatio, ammoBarHeight, 5);
+                context.fill();
+
+                // glow on ammo bar
+                context.shadowColor = this.game.player.powerUp ? 'rgba(255, 200, 0, 0.5)' : 'rgba(0, 150, 255, 0.4)';
+                context.shadowBlur = 8;
+                context.fill();
+                context.shadowBlur = 0;
             }
+
+            // ── Timer Bar (top of screen) ──
+            const timeRatio = Math.max(0, 1 - this.game.gameTime / this.game.timeLimit);
+            const timerWidth = this.game.width - 40;
+            const timerHeight = 6;
+            const timerX = 20;
+            const timerY = this.game.height - 16;
+
+            // background
+            context.fillStyle = 'rgba(255, 255, 255, 0.06)';
+            context.beginPath();
+            context.roundRect(timerX, timerY, timerWidth, timerHeight, 3);
+            context.fill();
+
+            // fill
+            if (timeRatio > 0) {
+                const timerGrad = context.createLinearGradient(timerX, 0, timerX + timerWidth * timeRatio, 0);
+                if (timeRatio > 0.3) {
+                    timerGrad.addColorStop(0, '#00ffa0');
+                    timerGrad.addColorStop(1, '#00cc88');
+                } else {
+                    timerGrad.addColorStop(0, '#ff4444');
+                    timerGrad.addColorStop(1, '#ff8800');
+                }
+                context.fillStyle = timerGrad;
+                context.beginPath();
+                context.roundRect(timerX, timerY, timerWidth * timeRatio, timerHeight, 3);
+                context.fill();
+                // glow
+                context.shadowColor = timeRatio > 0.3 ? 'rgba(0, 255, 160, 0.4)' : 'rgba(255, 80, 50, 0.5)';
+                context.shadowBlur = 6;
+                context.fill();
+                context.shadowBlur = 0;
+            }
+
+            // time text
+            context.shadowOffsetX = 0;
+            context.shadowOffsetY = 0;
+            const timeLeft = Math.max(0, (this.game.timeLimit - this.game.gameTime) * 0.001).toFixed(1);
+            context.font = '13px ' + this.accentFont;
+            context.fillStyle = timeRatio > 0.3 ? 'rgba(200, 255, 230, 0.6)' : 'rgba(255, 150, 130, 0.8)';
+            context.textAlign = 'right';
+            context.fillText(timeLeft + 's', timerX + timerWidth, timerY - 4);
+            context.textAlign = 'left';
+
+            // ── Game Over Screen ──
+            if (this.game.gameOver) {
+                this.gameOverAlpha = Math.min(1, this.gameOverAlpha + 0.02);
+                this.gameOverPulse += 0.04;
+
+                context.save();
+                context.globalAlpha = this.gameOverAlpha;
+
+                // dark overlay
+                context.fillStyle = 'rgba(0, 5, 20, 0.75)';
+                context.fillRect(0, 0, this.game.width, this.game.height);
+
+                context.textAlign = 'center';
+
+                const won = this.game.score >= this.game.winningScore;
+
+                // main message with glow
+                context.shadowColor = won ? 'rgba(0, 255, 180, 0.8)' : 'rgba(255, 60, 60, 0.8)';
+                context.shadowBlur = 20 + Math.sin(this.gameOverPulse) * 8;
+                context.font = '70px ' + this.fontFamily;
+                context.fillStyle = won ? '#00ffc8' : '#ff6666';
+                const message1 = won ? 'Most Wondrous!' : 'Blazes!';
+                context.fillText(message1, this.game.width * 0.5, this.game.height * 0.5 - 50);
+
+                // sub-message
+                context.shadowBlur = 0;
+                context.font = '22px ' + this.accentFont;
+                context.fillStyle = 'rgba(200, 220, 255, 0.85)';
+                const message2 = won ? 'Well done explorer!' : 'Better luck next time!';
+                context.fillText(message2, this.game.width * 0.5, this.game.height * 0.5 + 10);
+
+                // final score
+                context.font = 'bold 18px ' + this.accentFont;
+                context.fillStyle = 'rgba(150, 200, 255, 0.7)';
+                context.fillText(
+                    'Final Score: ' + Math.floor(this.game.score),
+                    this.game.width * 0.5,
+                    this.game.height * 0.5 + 50
+                );
+
+                // restart prompt — pulsing
+                const restartAlpha = 0.5 + Math.sin(this.gameOverPulse * 2) * 0.3;
+                context.globalAlpha = this.gameOverAlpha * restartAlpha;
+                context.font = '16px ' + this.accentFont;
+                context.fillStyle = '#ffffff';
+                context.fillText(
+                    '[ Press ENTER to Play Again ]',
+                    this.game.width * 0.5,
+                    this.game.height * 0.5 + 100
+                );
+
+                context.restore();
+            }
+
             context.restore();
         }
     }
@@ -482,6 +651,7 @@ window.addEventListener('load', function () {
             this.enemies = [];
             this.particles = [];
             this.explosions = [];
+            this.floatingTexts = [];
             this.enemyTimer = 0;
             this.enemyInterval = 2000;
             this.ammo = 20;
@@ -497,12 +667,27 @@ window.addEventListener('load', function () {
             this.timeLimit = 30000;
             this.speed = 1;
             this.debug = false;
+            this.maxParticles = 200;
+            this.wave = 1;
+            this.waveThreshold = 30;
+            // screen shake
+            this.shakeIntensity = 0;
+            this.shakeDuration = 0;
+            this.shakeTimer = 0;
         }
         update(deltaTime) {
             if (!this.gameOver) this.gameTime += deltaTime;
             if (this.gameTime > this.timeLimit) this.gameOver = true;
             this.background.update();
             this.player.update(deltaTime);
+
+            // wave progression
+            const newWave = Math.floor(this.score / this.waveThreshold) + 1;
+            if (newWave > this.wave) {
+                this.wave = newWave;
+                // speed up enemy spawns slightly each wave
+                this.enemyInterval = Math.max(500, 2000 - (this.wave - 1) * 150);
+            }
 
             // ammo
             if (this.ammoTimer > this.ammoInterval) {
@@ -511,15 +696,32 @@ window.addEventListener('load', function () {
             } else {
                 this.ammoTimer += deltaTime;
             }
-            // particles
+            // particles (capped)
             this.particles.forEach(particle => particle.update());
             this.particles = this.particles.filter(
                 particle => !particle.markedForDeletion
             );
+            if (this.particles.length > this.maxParticles) {
+                this.particles.length = this.maxParticles;
+            }
+
             this.explosions.forEach(explosion => explosion.update(deltaTime));
             this.explosions = this.explosions.filter(
                 explosion => !explosion.markedForDeletion
             );
+
+            // floating texts
+            this.floatingTexts.forEach(ft => ft.update(deltaTime));
+            this.floatingTexts = this.floatingTexts.filter(ft => !ft.markedForDeletion);
+
+            // screen shake
+            if (this.shakeTimer > 0) {
+                this.shakeTimer -= deltaTime;
+                if (this.shakeTimer <= 0) {
+                    this.shakeIntensity = 0;
+                    this.shakeTimer = 0;
+                }
+            }
 
             // enemies + collisions
             this.enemies.forEach(enemy => {
@@ -536,8 +738,15 @@ window.addEventListener('load', function () {
                             )
                         );
                     }
-                    if (enemy.type === 'lucky') this.player.enterPowerUp();
-                    else if(!this.gameOver) this.score--;
+                    if (enemy.type === 'lucky') {
+                        this.player.enterPowerUp();
+                    } else if (!this.gameOver) {
+                        this.score--;
+                        this.triggerShake(6, 300);
+                        this.floatingTexts.push(
+                            new FloatingText(-1, this.player.x + this.player.width, this.player.y)
+                        );
+                    }
                 }
                 this.player.projectiles.forEach(projectile => {
                     if (this.checkCollision(projectile, enemy)) {
@@ -574,9 +783,19 @@ window.addEventListener('load', function () {
                                 }
                             }
 
-                            if (!this.gameOver) this.score += enemy.score;
-                            /*if (this.score >= this.winningScore)
-                                this.gameOver = true;*/
+                            if (!this.gameOver) {
+                                this.score += enemy.score;
+                                this.floatingTexts.push(
+                                    new FloatingText(
+                                        enemy.score,
+                                        enemy.x + enemy.width * 0.5,
+                                        enemy.y
+                                    )
+                                );
+                            }
+                            // win condition
+                            if (this.score >= this.winningScore)
+                                this.gameOver = true;
                         }
                     }
                 });
@@ -592,14 +811,25 @@ window.addEventListener('load', function () {
             }
         }
         draw(context) {
+            // screen shake
+            context.save();
+            if (this.shakeTimer > 0) {
+                const dx = (Math.random() - 0.5) * this.shakeIntensity * 2;
+                const dy = (Math.random() - 0.5) * this.shakeIntensity * 2;
+                context.translate(dx, dy);
+            }
+
             this.background.draw(context);
             this.player.draw(context);
             this.particles.forEach(particle => particle.draw(context));
             this.enemies.forEach(enemy => enemy.draw(context));
             this.explosions.forEach(explosion => explosion.draw(context));
+            this.floatingTexts.forEach(ft => ft.draw(context));
             // foreground layer
             this.background.layer4.draw(context);
             this.ui.draw(context);
+
+            context.restore();
         }
         addEnemy() {
             const randomize = Math.random();
@@ -627,7 +857,6 @@ window.addEventListener('load', function () {
                     )
                 );
             }
-            console.log(this.explosions);
         }
         checkCollision(rect1, rect2) {
             return (
@@ -637,18 +866,47 @@ window.addEventListener('load', function () {
                 rect1.y + rect1.height > rect2.y
             );
         }
+        triggerShake(intensity, duration) {
+            this.shakeIntensity = intensity;
+            this.shakeDuration = duration;
+            this.shakeTimer = duration;
+        }
+        restart() {
+            this.enemies = [];
+            this.particles = [];
+            this.explosions = [];
+            this.floatingTexts = [];
+            this.player.projectiles = [];
+            this.player.x = 20;
+            this.player.y = 100;
+            this.player.powerUp = false;
+            this.player.powerUpTimer = 0;
+            this.player.frameY = 1;
+            this.ammo = 20;
+            this.ammoTimer = 0;
+            this.enemyTimer = 0;
+            this.enemyInterval = 2000;
+            this.gameOver = false;
+            this.score = 0;
+            this.gameTime = 0;
+            this.wave = 1;
+            this.shakeIntensity = 0;
+            this.shakeTimer = 0;
+            this.ui.gameOverAlpha = 0;
+            this.ui.gameOverPulse = 0;
+        }
     }
 
     const game = new Game(canvas.width, canvas.height);
     let lastTime = 0;
 
-    // animation loop
+    // animation loop — FIX: update BEFORE draw
     function animate(timeStamp) {
         const deltaTime = timeStamp - lastTime;
         lastTime = timeStamp;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        game.draw(ctx);
         game.update(deltaTime);
+        game.draw(ctx);
         requestAnimationFrame(animate);
     }
     animate(0);
