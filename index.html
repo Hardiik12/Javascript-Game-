@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Seahunter — A fast-paced 2D side-scrolling underwater shooter built with vanilla JavaScript and HTML5 Canvas.">
-    <title>Seahunter — 2D Shooter</title>
+    <meta name="description" content="Seahunter — A fast-paced 3D underwater shooter built with Three.js. Blast through waves of deep-sea creatures in stunning WebGL graphics.">
+    <title>Seahunter — 3D Underwater Shooter</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐠</text></svg>">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -13,29 +13,56 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <main>
-        <canvas id="canvas1"></canvas>
+    <main id="game-container">
+        <!-- Three.js canvas is injected here -->
     </main>
 
-    <!--characters-->
-    <img id="player" src="assets/player.png" >
-        <img id="angler1" src="assets/angler1.png" >
-        <img id="angler2" src="assets/angler2.png" >
-        <img id="lucky" src="assets/lucky.png" >
-        <img id="hivewhale" src="assets/hivewhale.png" >
-        <img id="drone" src="assets/drone.png" >
+    <!-- ── HUD Overlay ── -->
+    <div id="hud">
+        <div id="hud-panel">
+            <div class="hud-row">
+                <div class="hud-stat">
+                    <span class="hud-label">SCORE</span>
+                    <span class="hud-value" id="hud-score">0</span>
+                </div>
+                <div class="hud-stat">
+                    <span class="hud-label">WAVE</span>
+                    <span class="hud-value hud-wave" id="hud-wave">1</span>
+                </div>
+            </div>
+            <div class="hud-bar-group">
+                <span class="hud-bar-label">AMMO</span>
+                <div class="hud-bar-bg">
+                    <div class="hud-bar-fill" id="hud-ammo"></div>
+                </div>
+            </div>
+        </div>
+        <div id="hud-timer-wrap">
+            <div class="hud-bar-bg hud-timer-bg">
+                <div class="hud-bar-fill hud-timer-fill" id="hud-timer"></div>
+            </div>
+            <span id="hud-timer-text">30.0s</span>
+        </div>
+    </div>
 
-    <!--props-->
-    <img id="projectile" src="assets/projectile.png" >
-    <img id="gears" src="assets/gears.png" >
-    <img id="smokeExplosion" src="assets/smokeExplosion.png" >
-    <img id="fireExplosion" src="assets/fireExplosion.png" >
-     <!--environment setup-->
-     <img id="layer1" src="assets/layer1.png">
-     <img id="layer2" src="assets/layer2.png" >
-     <img id="layer3" src="assets/layer3.png" >
-     <img id="layer4" src="assets/layer4.png" >
+    <!-- ── Game Over Overlay ── -->
+    <div id="game-over-overlay" class="hidden">
+        <div id="game-over-content">
+            <h1 id="game-over-title">Blazes!</h1>
+            <p id="game-over-subtitle">Better luck next time!</p>
+            <p id="game-over-score">Final Score: 0</p>
+            <p class="restart-prompt">[ Press ENTER to Play Again ]</p>
+        </div>
+    </div>
 
-    <script src="script.js"></script>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+        }
+    }
+    </script>
+    <script type="module" src="script.js"></script>
 </body>
 </html>
